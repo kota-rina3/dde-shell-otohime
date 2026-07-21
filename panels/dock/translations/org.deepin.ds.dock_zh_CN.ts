@@ -69,5 +69,13 @@
         <source>Lock the Dock</source>
         <translation>禁用自由调节</translation>
     </message>
+    <message>
+        <source>System Monitor</source>
+        <translation>系统监视器</translation>
+    </message>
+    <message>
+        <source>Show Desktop</source>
+        <translation>显示桌面</translation>
+    </message>
 </context>
 </TS>

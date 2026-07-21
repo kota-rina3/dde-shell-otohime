@@ -71,5 +71,13 @@
         <source>Lock the Dock</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>System Monitor</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show Desktop</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 </TS>
