@@ -27,4 +27,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dde-shell-otohime-x64
-        path: ./
+        path: ../*.deb
