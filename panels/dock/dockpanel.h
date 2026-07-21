@@ -81,6 +81,8 @@ public:
     bool debugMode() const;
 
     Q_INVOKABLE void openDockSettings();
+    Q_INVOKABLE void openSystemMonitor();
+    Q_INVOKABLE void toggleShowDesktop();
 
     Q_INVOKABLE void notifyDockPositionChanged(int offsetX, int offsetY);
     

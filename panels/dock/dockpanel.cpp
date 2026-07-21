@@ -377,6 +377,28 @@ void DockPanel::openDockSettings()
     activation->requestToken();
 }
 
+void DockPanel::openSystemMonitor()
+{
+    qCDebug(dockLog) << "openSystemMonitor";
+    auto *activation = new ds::XdgActivation(this);
+    connect(activation, &ds::XdgActivation::tokenReady, this, [activation](const QString &token) {
+        QStringList args = {"--by-user", "deepin-system-monitor"};
+        if (!token.isEmpty()) {
+            qCDebug(dockLog) << "Passing XDG_ACTIVATION_TOKEN to dde-am";
+            args << "-e" << QStringLiteral("XDG_ACTIVATION_TOKEN=") + token;
+        }
+        QProcess::startDetached("dde-am", args);
+        activation->deleteLater();
+    });
+    activation->requestToken();
+}
+
+void DockPanel::toggleShowDesktop()
+{
+    qCDebug(dockLog) << "toggleShowDesktop";
+    QProcess::startDetached("/usr/lib/deepin-daemon/desktop-toggle", QStringList());
+}
+
 void DockPanel::notifyDockPositionChanged(int offsetX, int offsetY)
 {
     setFrontendWindowRect(offsetX, offsetY);
