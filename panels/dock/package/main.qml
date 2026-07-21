@@ -373,6 +373,18 @@ Window {
                 }
             }
             LP.MenuItem {
+                text: qsTr("System Monitor")
+                onTriggered: {
+                    Panel.openSystemMonitor()
+                }
+            }
+            LP.MenuItem {
+                text: qsTr("Show Desktop")
+                onTriggered: {
+                    Panel.toggleShowDesktop()
+                }
+            }
+            LP.MenuItem {
                 text: qsTr("Dock Settings")
                 onTriggered: {
                     Panel.openDockSettings()
