@@ -1,0 +1,30 @@
+name: dde-shell-otohime-x64
+
+on:
+  workflow_dispatch:
+    branch: master
+
+jobs:
+  build:
+    name: 编译构建
+    runs-on: ubuntu-latest
+    container: linuxdeepin/deepin:crimson
+
+    steps:
+    - name: 检查代码
+      uses: actions/checkout@v4
+
+    - name: 安装所需依赖
+      run: |
+        apt update && apt upgrade -y
+        sudo apt build-dep .
+
+    - name: 构建deb包
+      run: |
+        dpkg-buildpackage -uc -us -nc -b
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: dde-shell-otohime-x64
+        path: ./
