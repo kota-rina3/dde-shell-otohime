@@ -137,4 +137,10 @@ QDBusVariant DDENotificationDbusAdaptor::GetSystemInfo(uint configItem)
     return QDBusVariant(manager()->GetSystemInfo(configItem));
 }
 
+void DDENotificationDbusAdaptor::ClearRecords()
+{
+    qInfo(notifyLog) << "ClearRecords";
+    manager()->removeNotifications();
+}
+
 } // notification

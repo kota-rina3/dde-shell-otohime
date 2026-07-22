@@ -69,6 +69,8 @@ public Q_SLOTS: // methods
     void SetSystemInfo(uint configItem, const QDBusVariant &value);
     QDBusVariant GetSystemInfo(uint configItem);
 
+    void ClearRecords();
+
 private:
     NotificationManager *manager() const;
 
