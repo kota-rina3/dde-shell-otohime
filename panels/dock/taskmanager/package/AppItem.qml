@@ -8,7 +8,7 @@ import QtQuick.Controls 2.15
 import org.deepin.ds 1.0
 import org.deepin.ds.dock 1.0
 import org.deepin.dtk 1.0 as D
-import org.deepin.ds.dock.taskmanager 1.0
+
 import Qt.labs.platform 1.1 as LP
 
 Item {
@@ -618,9 +618,9 @@ Item {
         updateWindowIconGeometryTimer.start()
     }
 
-    // Progress bar overlay
-    property double appProgress: Progress.progress(itemId)
-    property bool appProgressVisible: Progress.progressVisible(itemId) && appProgress > 0
+    // Progress bar overlay (from model roles)
+    property double appProgress: typeof model.progress !== 'undefined' ? model.progress : 0
+    property bool appProgressVisible: (typeof model.progressVisible !== 'undefined' ? model.progressVisible : false) && appProgress > 0
 
     Rectangle {
         id: progressBar
