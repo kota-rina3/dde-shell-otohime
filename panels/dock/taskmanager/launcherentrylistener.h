@@ -4,12 +4,13 @@
 
 #pragma once
 
+#include <QDBusContext>
 #include <QHash>
 #include <QObject>
 
 namespace dock {
 
-class LauncherEntryListener : public QObject
+class LauncherEntryListener : public QObject, protected QDBusContext
 {
     Q_OBJECT
 

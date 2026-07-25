@@ -4,6 +4,7 @@
 
 #include "launcherentrylistener.h"
 
+#include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusMessage>
