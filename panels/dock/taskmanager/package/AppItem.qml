@@ -8,6 +8,7 @@ import QtQuick.Controls 2.15
 import org.deepin.ds 1.0
 import org.deepin.ds.dock 1.0
 import org.deepin.dtk 1.0 as D
+import org.deepin.ds.dock.taskmanager 1.0
 import Qt.labs.platform 1.1 as LP
 
 Item {
@@ -36,10 +37,6 @@ Item {
     Drag.hotSpot.y: icon.height / 2
     Drag.dragType: Drag.Automatic
     Drag.mimeData: { "text/x-dde-dock-dnd-appid": itemId, "text/x-dde-dock-dnd-source": "taskbar", "text/x-dde-dock-dnd-winid": windows.length > 0 ? windows[0] : ""}
-
-    Accessible.role: Accessible.Button
-    Accessible.name: root.name
-    Accessible.description: root.attention ? qsTr("Demands attention") : (root.active ? qsTr("Active") : "")
     
     property bool useColumnLayout: Panel.rootObject.useColumnLayout
     property real iconSize: Panel.rootObject.dockItemMaxSize * 9 / 14
@@ -615,5 +612,30 @@ Item {
 
     onIconGlobalPointChanged: {
         updateWindowIconGeometryTimer.start()
+    }
+
+    // Progress bar overlay
+    property double appProgress: Progress.progress(itemId)
+    property bool appProgressVisible: Progress.progressVisible(itemId) && appProgress > 0
+
+    Rectangle {
+        id: progressBar
+        anchors.bottom: iconContainer ? iconContainer.bottom : parent.bottom
+        anchors.horizontalCenter: iconContainer ? iconContainer.horizontalCenter : parent.horizontalCenter
+        width: appProgressVisible ? (iconContainer ? iconContainer.width : root.iconSize) : 0
+        height: 3
+        radius: 1
+        color: "#2ca7f8"
+        visible: appProgressVisible
+        clip: true
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: parent.width * appProgress
+            color: "#2ca7f8"
+            radius: 1
+        }
     }
 }
