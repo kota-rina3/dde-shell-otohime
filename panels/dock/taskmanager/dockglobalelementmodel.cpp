@@ -5,6 +5,7 @@
 #include "dockglobalelementmodel.h"
 #include "applicationinterface.h"
 #include "globals.h"
+#include "launcherentrylistener.h"
 #include "taskmanager.h"
 #include "taskmanagersettings.h"
 
@@ -228,6 +229,8 @@ QHash<int, QByteArray> DockGlobalElementModel::roleNames() const
         {TaskManager::WinTitleRole, MODEL_TITLE},
         {TaskManager::WinIconRole, MODEL_WINICON},
         {TaskManager::WinIdRole, MODEL_WINID},
+        {TaskManager::ProgressRole, "progress"},
+        {TaskManager::ProgressVisibleRole, "progressVisible"},
     };
 }
 
@@ -395,6 +398,13 @@ QVariant DockGlobalElementModel::data(const QModelIndex &index, int role) const
 
     case TaskManager::MenusRole: {
         return getMenus(index);
+    }
+
+    case TaskManager::ProgressRole: {
+        return LauncherEntryListener::instance()->progress(id);
+    }
+    case TaskManager::ProgressVisibleRole: {
+        return LauncherEntryListener::instance()->progressVisible(id);
     }
 
     default: {
