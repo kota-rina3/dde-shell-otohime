@@ -15,6 +15,7 @@
 #include "globals.h"
 #include "hoverpreviewproxymodel.h"
 #include "itemmodel.h"
+#include "launcherentrylistener.h"
 #include "pluginfactory.h"
 #include "taskmanager.h"
 #include "taskmanageradaptor.h"
@@ -150,6 +151,10 @@ TaskManager::TaskManager(QObject *parent)
     qmlRegisterType<TextCalculator>("org.deepin.ds.dock.taskmanager", 1, 0, "TextCalculator");
     qmlRegisterUncreatableType<TextCalculatorAttached>("org.deepin.ds.dock.taskmanager", 1, 0, "TextCalculatorAttached", "TextCalculator Attached");
 
+    // Register progress listener for QML
+    qmlRegisterSingletonInstance<LauncherEntryListener>("org.deepin.ds.dock.taskmanager", 1, 0,
+                                                         "Progress", LauncherEntryListener::instance());
+
     connect(Settings, &TaskManagerSettings::allowedForceQuitChanged, this, &TaskManager::allowedForceQuitChanged);
     connect(Settings, &TaskManagerSettings::showAttentionAnimationChanged, this, &TaskManager::showAttentionAnimationChanged);
     connect(Settings, &TaskManagerSettings::windowSplitChanged, this, &TaskManager::windowSplitChanged);
@@ -216,7 +221,7 @@ bool TaskManager::init()
             auto res = model->match(model->index(0, 0), roleNames.key(MODEL_DESKTOPID), identifies.value(0), 1, Qt::MatchEndsWith);
             qCDebug(taskManagerLog) << "matched" << res.value(0);
             return res.value(0);
-        });
+        }, this);
 
         m_dockGlobalElementModel = new DockGlobalElementModel(model, m_activeAppModel, this);
         m_itemModel = new DockItemModel(m_dockGlobalElementModel, this);
@@ -250,6 +255,25 @@ bool TaskManager::init()
     QTimer::singleShot(500, this, [this]() {
         if (m_windowMonitor)
             m_windowMonitor->start();
+    });
+
+    // Initialize progress listener and connect to model updates
+    auto *progressListener = LauncherEntryListener::instance();
+    connect(progressListener, &LauncherEntryListener::progressChanged, this, [this](const QString &desktopId) {
+        if (!m_itemModel) return;
+        auto indexes = m_itemModel->match(m_itemModel->index(0, 0),
+                                          TaskManager::DesktopIdRole, desktopId, 1, Qt::MatchExactly);
+        if (!indexes.isEmpty()) {
+            Q_EMIT m_itemModel->dataChanged(indexes.first(), indexes.first(), {TaskManager::ProgressRole});
+        }
+    });
+    connect(progressListener, &LauncherEntryListener::progressVisibleChanged, this, [this](const QString &desktopId) {
+        if (!m_itemModel) return;
+        auto indexes = m_itemModel->match(m_itemModel->index(0, 0),
+                                          TaskManager::DesktopIdRole, desktopId, 1, Qt::MatchExactly);
+        if (!indexes.isEmpty()) {
+            Q_EMIT m_itemModel->dataChanged(indexes.first(), indexes.first(), {TaskManager::ProgressVisibleRole});
+        }
     });
 
     return true;

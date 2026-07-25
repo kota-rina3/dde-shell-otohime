@@ -6,6 +6,7 @@
 #include "abstractitem.h"
 #include "appitem.h"
 #include "globals.h"
+#include "launcherentrylistener.h"
 #include "taskmanager.h"
 #include "taskmanagersettings.h"
 
@@ -45,7 +46,9 @@ QHash<int, QByteArray> ItemModel::roleNames() const
         {TaskManager::DockedRole, MODEL_DOCKED},
         {TaskManager::WindowsRole, MODEL_WINDOWS},
         {TaskManager::WinIconRole, MODEL_WINICON},
-        {ItemModel::DockedDirRole, "dockedDir"}
+        {ItemModel::DockedDirRole, "dockedDir"},
+        {TaskManager::ProgressRole, "progress"},
+        {TaskManager::ProgressVisibleRole, "progressVisible"}
     };
     // clang-format on
 }
@@ -74,6 +77,18 @@ QVariant ItemModel::data(const QModelIndex &index, int role) const
         case TaskManager::WindowsRole: return item->data().toStringList();
         case TaskManager::WinIconRole: return item->data().toStringList();
         case ItemModel::DockedDirRole: return item->data().toString();
+        case TaskManager::ProgressRole: {
+            auto appItem = qobject_cast<AppItem*>(item.data());
+            if (appItem)
+                return LauncherEntryListener::instance()->progress(appItem->desktopfileID());
+            return 0.0;
+        }
+        case TaskManager::ProgressVisibleRole: {
+            auto appItem = qobject_cast<AppItem*>(item.data());
+            if (appItem)
+                return LauncherEntryListener::instance()->progressVisible(appItem->desktopfileID());
+            return false;
+        }
     }
     // clang-format on
     return QVariant();

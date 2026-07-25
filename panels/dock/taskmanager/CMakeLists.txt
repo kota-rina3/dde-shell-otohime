@@ -86,6 +86,8 @@ add_library(dock-taskmanager SHARED ${DBUS_INTERFACES}
     taskmanagersettings.h
     textcalculator.h
     textcalculator.cpp
+    launcherentrylistener.h
+    launcherentrylistener.cpp
 )
 
 qt_generate_wayland_protocol_client_sources(dock-taskmanager

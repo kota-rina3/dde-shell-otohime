@@ -65,6 +65,10 @@ public:
         ExecsRole,
         CategoriesRole,
         DesktopSourcePathRole,
+
+        // progress
+        ProgressRole,
+        ProgressVisibleRole,
     };
     Q_ENUM(Roles)
 
