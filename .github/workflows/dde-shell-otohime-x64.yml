@@ -22,10 +22,11 @@ jobs:
     - name: 构建deb包
       run: |
         dpkg-buildpackage -uc -us -nc -b
-        cp ../*.deb ./
+        mkdir ./dde-shell-otohime-x64
+        cp ../*.deb ./dde-shell-otohime-x64
 
     - name: 上传构建产物
       uses: actions/upload-artifact@v4
       with:
         name: dde-shell-otohime-x64
-        path: ./
+        path: ./dde-shell-otohime-x64
