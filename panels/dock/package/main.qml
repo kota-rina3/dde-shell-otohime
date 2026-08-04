@@ -58,6 +58,9 @@ Window {
     }
 
     function requestShowDockMenu() {
+        if (!Panel.contextMenuEnabled)
+            return
+
         // maybe has popup visible, close it.
         Panel.requestClosePopup()
         viewDeactivated()
@@ -69,7 +72,7 @@ Window {
     DLayerShellWindow.layer: DLayerShellWindow.LayerTop
     DLayerShellWindow.exclusionZone: Panel.hideMode === Dock.KeepShowing ? Applet.dockSize : 0
     DLayerShellWindow.scope: "dde-shell/dock"
-    DLayerShellWindow.keyboardInteractivity: DLayerShellWindow.KeyboardInteractivityOnDemand
+    DLayerShellWindow.keyboardInteractivity: DLayerShellWindow.KeyboardInteractivityNone
 
     D.DWindow.enabled: true
     D.DWindow.windowRadius: 0
@@ -393,6 +396,18 @@ Window {
         }
     }
 
+    Connections {
+        target: Panel
+        function onContextMenuEnabledChanged() {
+            if (Panel.contextMenuEnabled)
+                return
+
+            if (MenuHelper.activeMenu === dockMenuLoader.item)
+                MenuHelper.closeCurrent()
+            dockMenuLoader.active = false
+        }
+    }
+
     Item {
         id: dockContainer
         width: dock.useColumnLayout ? dock.dockSize : parent.width
@@ -430,8 +445,10 @@ Window {
             onTapped: function(eventPoint, button) {
                 let lastActive = MenuHelper.activeMenu
                 MenuHelper.closeCurrent()
-                dockMenuLoader.active = true
-                if (button === Qt.RightButton && lastActive !== dockMenuLoader.item) {
+                if (button === Qt.RightButton && Panel.contextMenuEnabled) {
+                    dockMenuLoader.active = true
+                }
+                if (button === Qt.RightButton && Panel.contextMenuEnabled && lastActive !== dockMenuLoader.item) {
                     requestShowDockMenu()
                 }
                 if (button === Qt.LeftButton) {
@@ -453,7 +470,6 @@ Window {
                 }
                 let lastActive = MenuHelper.activeMenu
                 MenuHelper.closeCurrent()
-                dockMenuLoader.active = true
                 // try to close popup when clicked empty, because dock does not have focus.
                 Panel.requestClosePopup()
                 viewDeactivated()
@@ -462,8 +478,10 @@ Window {
                 dockContainer.touchLongPressed = true
                 let lastActive = MenuHelper.activeMenu
                 MenuHelper.closeCurrent()
-                dockMenuLoader.active = true
-                if (lastActive !== dockMenuLoader.item) {
+                if (Panel.contextMenuEnabled) {
+                    dockMenuLoader.active = true
+                }
+                if (Panel.contextMenuEnabled && lastActive !== dockMenuLoader.item) {
                     requestShowDockMenu()
                 }
             }
