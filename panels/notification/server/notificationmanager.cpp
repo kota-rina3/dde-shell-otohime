@@ -15,9 +15,11 @@
 #include <DConfig>
 
 #include <QAbstractItemModel>
-#include <QDBusInterface>
+#include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDBusServiceWatcher>
 #include <QProcess>
-#include <QTimer>
 #include <QLoggingCategory>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -37,24 +39,20 @@ Q_DECLARE_LOGGING_CATEGORY(notifyLog)
 namespace notification {
 
 static const uint NoReplacesId = 0;
-static const int DefaultTimeOutMSecs = 5000;
-static const int BlockItemTimeout = 1000;
 static const QString NotificationsDBusService = "org.freedesktop.Notifications";
 static const QString NotificationsDBusPath = "/org/freedesktop/Notifications";
 static const QString DDENotifyDBusServer = "org.deepin.dde.Notification1";
 static const QString DDENotifyDBusPath = "/org/deepin/dde/Notification1";
 static const QString SessionDBusService = "org.deepin.dde.SessionManager1";
 static const QString SessionDaemonDBusPath = "/org/deepin/dde/SessionManager1";
+static const QString LockFrontDBusService = "org.deepin.dde.LockFront1";
+static const QString LockFrontDBusPath = "/org/deepin/dde/LockFront1";
 
 NotificationManager::NotificationManager(QObject *parent)
     : QObject(parent)
     , m_persistence(DataAccessorProxy::instance())
     , m_setting(new NotificationSetting(this))
-    , m_pendingTimeout(new QTimer(this))
 {
-    m_pendingTimeout->setSingleShot(true);
-    connect(m_pendingTimeout, &QTimer::timeout, this, &NotificationManager::onHandingPendingEntities);
-
     DataAccessorProxy::instance()->setSource(DBAccessor::instance());
 
     DAppletBridge bridge("org.deepin.ds.dde-apps");
@@ -90,6 +88,11 @@ NotificationManager::NotificationManager(QObject *parent)
 
 NotificationManager::~NotificationManager()
 {
+}
+
+void NotificationManager::stopAppMonitoring()
+{
+    m_setting->stopAppMonitoring();
 }
 
 bool NotificationManager::registerDbusService()
@@ -141,8 +144,10 @@ void NotificationManager::actionInvoked(qint64 id, uint bubbleId, const QString 
         Q_EMIT ActionInvoked(bubbleId, actionKey);
         Q_EMIT NotificationClosed(bubbleId, NotifyEntity::Closed);
     } else {
-        // For non-extended actions, emit ActivationToken first if available
-        auto *activation = new DS_NAMESPACE::XdgActivation(this);
+        // For non-extended actions, emit ActivationToken first if available.
+        // The activation must not be parented to the worker-thread manager;
+        // the tokenReady handler below deletes it when the token arrives.
+        auto *activation = new DS_NAMESPACE::XdgActivation();
         connect(
             activation,
             &DS_NAMESPACE::XdgActivation::tokenReady,
@@ -164,6 +169,17 @@ void NotificationManager::actionInvoked(qint64 id, uint bubbleId, const QString 
 void NotificationManager::notificationClosed(qint64 id, uint bubbleId, uint reason)
 {
     qDebug(notifyLog) << "Close notification id" << id << ", reason" << reason;
+
+    const auto entity = m_persistence->fetchEntity(id);
+    // Close requests (expire timer, bubble/staging close, D-Bus
+    // CloseNotification) can race for the same notification. They are
+    // serialized on the server thread, and the first one handled removes the
+    // notification or moves it into the notification center under a new id, so
+    // a stale request finds no entity here. Dropping it keeps NotificationClosed
+    // from being emitted twice.
+    if (!entity.isValid())
+        return;
+
     updateEntityProcessed(id, reason);
 
     Q_EMIT NotificationClosed(bubbleId, reason);
@@ -296,22 +312,9 @@ uint NotificationManager::Notify(const QString &appName, uint replacesId, const 
             return 0;
         }
 
-        if (entity.isReplace() && m_persistence->fetchLastEntity(entity.bubbleId()).isValid()) {
-            removePendingEntity(entity);
-        }
-
         emitRecordCountChanged();
 
         Q_EMIT NotificationStateChanged(entity.id(), entity.processedType());
-
-        bool critical = false;
-        if (auto iter = hints.find("urgency"); iter != hints.end()) {
-            critical = iter.value().toUInt() == NotifyEntity::Critical;
-        }
-        // 0: never expire. -1: DefaultTimeOutMSecs
-        if (expireTimeout != 0 && !critical) {
-            pushPendingEntity(entity, expireTimeout);
-        }
     }
 
     tryPlayNotificationSound(entity, appId, dndMode);
@@ -372,29 +375,6 @@ QVariant NotificationManager::GetSystemInfo(uint configItem)
     return m_setting->systemValue(static_cast<NotificationSetting::SystemConfigItem>(configItem));
 }
 
-void NotificationManager::setBlockClosedId(qint64 id)
-{
-    if (id == m_blockClosedId) {
-        return;
-    }
-
-    if(m_blockClosedId != NotifyEntity::InvalidId) {
-        auto findIter = std::find_if(m_pendingTimeoutEntities.begin(), m_pendingTimeoutEntities.end(), [this](const NotifyEntity &entity) {
-            return entity.id() == m_blockClosedId;
-        });
-
-        const auto current = QDateTime::currentMSecsSinceEpoch();
-        if (findIter != m_pendingTimeoutEntities.end()) {
-            if (current > findIter.key() - BlockItemTimeout) {
-                qDebug(notifyLog) << "Delay close bubble id:" << m_blockClosedId << "for the new block bubble id:" << id;
-                m_pendingTimeoutEntities.insert(current + BlockItemTimeout, findIter.value());
-                m_pendingTimeoutEntities.erase(findIter);
-            }
-        }
-    }
-    m_blockClosedId = id;
-    onHandingPendingEntities();
-}
 
 bool NotificationManager::isDoNotDisturb() const
 {
@@ -498,21 +478,6 @@ void NotificationManager::emitRecordCountChanged()
     emit RecordCountChanged(count);
 }
 
-void NotificationManager::pushPendingEntity(const NotifyEntity &entity, int expireTimeout)
-{
-    const int interval = expireTimeout == -1 ? DefaultTimeOutMSecs : expireTimeout;
-
-    qint64 point = QDateTime::currentMSecsSinceEpoch() + interval;
-    m_pendingTimeoutEntities.insert(point, entity);
-
-    if (m_lastTimeoutPoint > point) {
-        m_lastTimeoutPoint = point;
-        auto newInterval = m_lastTimeoutPoint - QDateTime::currentMSecsSinceEpoch();
-        m_pendingTimeout->setInterval(newInterval);
-        m_pendingTimeout->start();
-    }
-}
-
 void NotificationManager::updateEntityProcessed(qint64 id, uint reason)
 {
     auto entity = m_persistence->fetchEntity(id);
@@ -546,7 +511,6 @@ void NotificationManager::updateEntityProcessed(const NotifyEntity &entity)
 
     Q_EMIT NotificationStateChanged(entity.id(), entity.processedType());
 
-    removePendingEntity(entity);
     emitRecordCountChanged();
 }
 
@@ -599,8 +563,10 @@ void NotificationManager::doActionInvoked(const NotifyEntity &entity, const QStr
                     amArgs << "--" << args;
                 }
 
-                // Get activation token, then start process
-                auto *activation = new DS_NAMESPACE::XdgActivation(this);
+                // Get activation token, then start process. It must not be
+                // parented to the worker-thread manager; the tokenReady
+                // handler below deletes it when the token arrives.
+                auto *activation = new DS_NAMESPACE::XdgActivation();
                 auto amArgsCopy = amArgs;
                 connect(activation, &DS_NAMESPACE::XdgActivation::tokenReady, this,
                     [amArgsCopy, activation](const QString &token) {
@@ -689,89 +655,64 @@ bool NotificationManager::invokeShellAction(const QString &data)
 
 void NotificationManager::initScreenLockedState()
 {
-    const QString interfaceAndServiceName = "org.deepin.dde.LockFront1";
-    const QString path = "/org/deepin/dde/LockFront1";
-
-    QDBusInterface interface(interfaceAndServiceName, path,
-        "org.freedesktop.DBus.Properties", QDBusConnection::sessionBus());
-
-    QDBusReply<QDBusVariant> reply = interface.call("Get", "org.deepin.dde.LockFront1", "Visible");
-    if (reply.isValid()) {
-        m_screenLocked = reply.value().variant().toBool();
-    } else {
-        m_screenLocked = false;
-        qWarning(notifyLog) << "Failed to get the lock visible property:" << reply.error().message();
-    }
-
-    QDBusConnection::sessionBus().connect(interfaceAndServiceName, path, interfaceAndServiceName,
+    auto connection = QDBusConnection::sessionBus();
+    connection.connect(LockFrontDBusService, LockFrontDBusPath, LockFrontDBusService,
         "Visible", this, SLOT(onScreenLockedChanged(bool)));
+
+    auto *serviceWatcher = new QDBusServiceWatcher(LockFrontDBusService, connection,
+        QDBusServiceWatcher::WatchForOwnerChange, this);
+    connect(serviceWatcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+        [this](const QString &, const QString &, const QString &newOwner) {
+            // Discard any reply from the previous owner before starting a new query.
+            if (m_screenLockedQueryWatcher) {
+                m_screenLockedQueryWatcher->deleteLater();
+                m_screenLockedQueryWatcher = nullptr;
+            }
+            if (!newOwner.isEmpty())
+                queryScreenLockedState();
+        });
+
+    queryScreenLockedState();
 }
 
-void NotificationManager::onHandingPendingEntities()
+void NotificationManager::queryScreenLockedState()
 {
-    QList<NotifyEntity> timeoutEntities;
+    if (m_screenLockedQueryWatcher)
+        return;
 
-    const auto current = QDateTime::currentMSecsSinceEpoch();
-    for (auto iter = m_pendingTimeoutEntities.begin(); iter != m_pendingTimeoutEntities.end();) {
-        const auto point = iter.key();
-        if (point > current) {
-            iter++;
-            continue;
+    auto message = QDBusMessage::createMethodCall(LockFrontDBusService, LockFrontDBusPath,
+        "org.freedesktop.DBus.Properties", "Get");
+    // dde-session starts LockFront after the dock; querying must not activate it early.
+    message.setAutoStartService(false);
+    message << LockFrontDBusService << QStringLiteral("Visible");
+    m_screenLockedQueryWatcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(message), this);
+    connect(m_screenLockedQueryWatcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *watcher) {
+        watcher->deleteLater();
+        if (watcher != m_screenLockedQueryWatcher)
+            return;
+        m_screenLockedQueryWatcher = nullptr;
+        const QDBusPendingReply<QDBusVariant> reply = *watcher;
+        if (reply.isError()) {
+            // An absent service is expected at startup. Wait for its registration or Visible.
+            const auto error = reply.error();
+            if (error.type() != QDBusError::ServiceUnknown
+                && error.name() != QLatin1String("org.freedesktop.DBus.Error.NameHasNoOwner")) {
+                qWarning(notifyLog) << "Failed to get the lock visible property:" << error.message();
+            }
+            return;
         }
-
-        const auto entity = iter.value();;
-        timeoutEntities << entity;
-        iter = m_pendingTimeoutEntities.erase(iter);
-    }
-
-    // update pendingTimeout to deal with m_pendingTimeoutEntities
-    if (!m_pendingTimeoutEntities.isEmpty()) {
-        auto points = m_pendingTimeoutEntities.keys();
-        std::sort(points.begin(), points.end());
-        // find last point to restart pendingTimeout
-        m_lastTimeoutPoint = points.first();
-        auto newInterval = m_lastTimeoutPoint - current;
-        // let timer start in main thread
-        QMetaObject::invokeMethod(m_pendingTimeout, "start", Qt::QueuedConnection, Q_ARG(int, newInterval));
-    } else {
-        // reset m_lastTimeoutPoint
-        m_lastTimeoutPoint = std::numeric_limits<qint64>::max();
-    }
-
-    for (const auto &item : timeoutEntities) {
-        // Validate entity before processing timeout to prevent race conditions
-        if (!item.isValid()) {
-            qWarning(notifyLog) << "Skipping timeout processing for invalid entity id:" << item.id() << "appName:" << item.appName()
-                                << "cTime:" << item.cTime();
-            continue;
-        }
-
-        if (item.id() == m_blockClosedId) {
-            qDebug(notifyLog) << "bubble id:" << item.bubbleId() << "entity id:" << item.id();
-            m_pendingTimeoutEntities.insert(current, item);
-            continue;
-        }
-
-        qDebug(notifyLog) << "Expired for the notification " << item.id() << item.appName();
-        notificationClosed(item.id(), item.bubbleId(), NotifyEntity::Expired);
-    }
-}
-
-void NotificationManager::removePendingEntity(const NotifyEntity &entity)
-{
-    for (auto iter = m_pendingTimeoutEntities.begin(); iter != m_pendingTimeoutEntities.end();) {
-        const auto item = iter.value();
-        if (item == entity || (entity.isReplace() && item.bubbleId() == entity.bubbleId())) {
-            m_pendingTimeoutEntities.erase(iter);
-            onHandingPendingEntities();
-            break;
-        }
-        ++iter;
-    }
+        onScreenLockedChanged(reply.value().variant().toBool());
+    });
 }
 
 void NotificationManager::onScreenLockedChanged(bool screenLocked)
 {
+    // A Visible signal supersedes any pending query reply.
+    if (m_screenLockedQueryWatcher) {
+        m_screenLockedQueryWatcher->deleteLater();
+        m_screenLockedQueryWatcher = nullptr;
+    }
     m_screenLocked = screenLocked;
 }
 

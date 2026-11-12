@@ -230,4 +230,34 @@ void AppItem::setDesktopSourcePath(const QString &desktopSourcePath)
 {
     setData(desktopSourcePath, AppItemModel::DesktopSourcePathRole);
 }
+
+QString AppItem::vendor() const
+{
+    return data(AppItemModel::VendorRole).toString();
+}
+
+void AppItem::setVendor(const QString &vendor)
+{
+    setData(vendor, AppItemModel::VendorRole);
+}
+
+QString AppItem::genericName() const
+{
+    return data(AppItemModel::GenericNameRole).toString();
+}
+
+void AppItem::setGenericName(const QString &genericName)
+{
+    setData(genericName, AppItemModel::GenericNameRole);
+}
+
+QStringList AppItem::keywords() const
+{
+    return data(AppItemModel::KeywordsRole).toStringList();
+}
+
+void AppItem::setKeywords(const QStringList &keywords)
+{
+    setData(keywords, AppItemModel::KeywordsRole);
+}
 }

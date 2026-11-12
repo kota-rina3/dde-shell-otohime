@@ -52,6 +52,9 @@ TaskManagerSettings::TaskManagerSettings(QObject *parent)
         } else if (TASKMANAGER_SHOW_ATTENTION_ANIMATION_KEY == key) {
             m_showAttentionAnimation = m_taskManagerDconfig->value(TASKMANAGER_SHOW_ATTENTION_ANIMATION_KEY, true).toBool();
             Q_EMIT showAttentionAnimationChanged();
+        } else if (TASKMANAGER_SHOW_APP_WINDOW_LIST_KEY == key) {
+            m_showAppWindowList = m_taskManagerDconfig->value(TASKMANAGER_SHOW_APP_WINDOW_LIST_KEY, false).toBool();
+            Q_EMIT showAppWindowListChanged();
         } else if (TASKMANAGER_WINDOWSPLIT_KEY == key) {
             m_windowSplit = m_taskManagerDconfig->value(TASKMANAGER_WINDOWSPLIT_KEY).toBool();
             Q_EMIT windowSplitChanged();
@@ -70,6 +73,7 @@ TaskManagerSettings::TaskManagerSettings(QObject *parent)
 
     m_allowForceQuit = enableStr2Bool(m_taskManagerDconfig->value(TASKMANAGER_ALLOWFOCEQUIT_KEY).toString());
     m_showAttentionAnimation = m_taskManagerDconfig->value(TASKMANAGER_SHOW_ATTENTION_ANIMATION_KEY, true).toBool();
+    m_showAppWindowList = m_taskManagerDconfig->value(TASKMANAGER_SHOW_APP_WINDOW_LIST_KEY, false).toBool();
     m_windowSplit = m_taskManagerDconfig->value(TASKMANAGER_WINDOWSPLIT_KEY).toBool();
     m_cgroupsBasedGrouping = m_taskManagerDconfig->value(TASKMANAGER_CGROUPS_BASED_GROUPING_KEY, true).toBool();
     m_dockedElements = m_taskManagerDconfig->value(TASKMANAGER_DOCKEDELEMENTS_KEY, {}).toStringList();
@@ -96,15 +100,42 @@ bool TaskManagerSettings::showAttentionAnimation() const
     return m_showAttentionAnimation;
 }
 
-bool TaskManagerSettings::isWindowSplit()
+bool TaskManagerSettings::showAppWindowList() const
+{
+    return m_showAppWindowList;
+}
+
+bool TaskManagerSettings::windowSplitValue() const
 {
     return m_windowSplit;
+}
+
+bool TaskManagerSettings::isWindowSplit()
+{
+    // The window split (noTaskGrouping) is not applied in fashion mode.
+    return m_windowSplit && !m_fashionMode;
 }
 
 void TaskManagerSettings::setWindowSplit(bool split)
 {
     m_windowSplit = split;
     m_taskManagerDconfig->setValue(TASKMANAGER_WINDOWSPLIT_KEY, m_windowSplit);
+}
+
+void TaskManagerSettings::setFashionMode(bool fashionMode)
+{
+    if (m_fashionMode == fashionMode)
+        return;
+
+    m_fashionMode = fashionMode;
+    // Notify consumers (models, QML) so the effective split state is re-evaluated.
+    Q_EMIT windowSplitChanged();
+    Q_EMIT fashionModeChanged();
+}
+
+bool TaskManagerSettings::fashionMode() const
+{
+    return m_fashionMode;
 }
 
 bool TaskManagerSettings::cgroupsBasedGrouping() const

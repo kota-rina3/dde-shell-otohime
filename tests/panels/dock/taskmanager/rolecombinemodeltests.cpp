@@ -356,3 +356,152 @@ TEST(RoleCombineModel, ParentParameterHandlingFix)
     EXPECT_EQ(model.rowCount(), 1);
     EXPECT_TRUE(model.index(0, 0).isValid());
 }
+
+// 验证多个major行映射到同一minor行时，minor dataChanged能转发给所有major行
+TEST(RoleCombineModel, MinorDataChangedForwardToAllMappedMajorRows)
+{
+    TestModelA modelA;
+    TestModelB modelB;
+
+    RoleCombineModel model(&modelA, &modelB, TestModelA::idRole, [](QVariant data, QAbstractItemModel *model) -> QModelIndex {
+        auto matches = model->match(model->index(0, 0), TestModelB::idRole, data);
+        return matches.isEmpty() ? QModelIndex() : matches.first();
+    });
+
+    QSignalSpy spy(&model, &QAbstractItemModel::dataChanged);
+
+    // 添加两个major行，都映射到同一个minor行(id=0)
+    modelA.addData(new DataA(0, "window1", &modelA));
+    modelA.addData(new DataA(0, "window2", &modelA));
+
+    // 添加对应的minor数据
+    modelB.addData(new DataB(0, "appData", &modelB));
+
+    // 验证两个major行都映射到minor行0
+    auto roleNames = model.roleNames();
+    auto roleNamesA = modelA.roleNames();
+    auto roleNamesB = modelB.roleNames();
+    QHash<QByteArray, int> names2Role;
+    for (auto roleName : roleNames.keys()) {
+        names2Role.insert(roleNames.value(roleName), roleName);
+    }
+    int bDataRole = names2Role.value(roleNamesB.value(TestModelB::dataRole));
+
+    // Verify initial mapping works
+    ASSERT_EQ(model.rowCount(), 2) << "Model should have 2 rows";
+    ASSERT_TRUE(model.index(0, 0).isValid()) << "Major row 0 should be valid";
+    ASSERT_TRUE(model.index(1, 0).isValid()) << "Major row 1 should be valid";
+    ASSERT_NE(bDataRole, -1) << "bData role not found in combined model";
+
+    EXPECT_EQ(model.index(0, 0).data(bDataRole).toString(), "appData");
+    EXPECT_EQ(model.index(1, 0).data(bDataRole).toString(), "appData");
+
+    // 修改minor数据，触发dataChanged
+    spy.clear();
+
+    // Verify DataB::setData emits dataChanged on modelB
+    QSignalSpy spyB(&modelB, &QAbstractItemModel::dataChanged);
+    modelB.setData(modelB.index(0), "newAppData", TestModelB::dataRole);
+    EXPECT_EQ(spyB.count(), 1) << "modelB should emit dataChanged when setData is called";
+
+    // Now check if RoleCombineModel forwarded the signal
+    EXPECT_EQ(spy.count(), 2) << "Should emit dataChanged for both major rows mapping to the same minor row";
+
+    // 验证数据已更新
+    EXPECT_EQ(model.index(0, 0).data(bDataRole).toString(), "newAppData");
+    EXPECT_EQ(model.index(1, 0).data(bDataRole).toString(), "newAppData");
+}
+
+// ---- 验证 Bug: RoleCombineModel 不处理 source modelReset ----
+// 当 major 源模型（如窗口 monitor）调用 beginResetModel/endResetModel 时，
+// RoleCombineModel 应当重建 m_indexMap 并发出 modelReset 通知下游视图。
+// 当前实现缺少 modelReset/layoutChanged 连接，导致 m_indexMap 残留旧映射、
+// 下游 DockGlobalElementModel 不清理过期条目 -> 任务栏出现幽灵/重复图标。
+TEST(RoleCombineModel, MajorModelResetForwarding)
+{
+    TestModelA modelA;
+    TestModelB modelB;
+
+    auto combineFunc = [](QVariant data, QAbstractItemModel *model) -> QModelIndex {
+        auto matches = model->match(model->index(0, 0), TestModelB::idRole, data);
+        return matches.isEmpty() ? QModelIndex() : matches.first();
+    };
+
+    RoleCombineModel model(&modelA, &modelB, TestModelA::idRole, combineFunc);
+
+    modelA.addData(new DataA(0, "a0", &modelA));
+    modelA.addData(new DataA(1, "a1", &modelA));
+    modelB.addData(new DataB(0, "b0", &modelB));
+    modelB.addData(new DataB(1, "b1", &modelB));
+
+    ASSERT_EQ(model.rowCount(), 2);
+
+    QSignalSpy resetSpy(&model, &QAbstractItemModel::modelReset);
+
+    // 模拟窗口 monitor 的 clear() 操作：beginResetModel + 清空 + endResetModel
+    modelA.resetModel();
+
+    // 源已清空，rowCount 应归零
+    EXPECT_EQ(model.rowCount(), 0);
+
+    // 必须发出 modelReset 信号，否则下游视图永远不知道行已消失
+    // BUG: 当前实现不会发出此信号，此断言会 FAIL
+    EXPECT_EQ(resetSpy.count(), 1) << "FAIL: RoleCombineModel did not forward modelReset from major source";
+
+    // 重新添加数据后，新行应正确映射，不应残留旧行
+    modelA.addData(new DataA(2, "a2", &modelA));
+    modelB.addData(new DataB(2, "b2", &modelB));
+
+    EXPECT_EQ(model.rowCount(), 1);
+    auto roleNames = model.roleNames();
+    auto roleNamesB = modelB.roleNames();
+    QHash<QByteArray, int> names2Role;
+    for (auto it = roleNames.constBegin(); it != roleNames.constEnd(); ++it) {
+        names2Role.insert(it.value(), it.key());
+    }
+    int bDataRole = names2Role.value(roleNamesB.value(TestModelB::dataRole));
+    EXPECT_EQ(model.index(0, 0).data(bDataRole).toString(), "b2");
+}
+
+// ---- 验证 Bug: RoleCombineModel 不处理 minor modelReset ----
+// 当 minor 源模型（apps 模型）复位时，RoleCombineModel 同样应重建映射。
+TEST(RoleCombineModel, MinorModelResetForwarding)
+{
+    TestModelA modelA;
+    TestModelB modelB;
+
+    auto combineFunc = [](QVariant data, QAbstractItemModel *model) -> QModelIndex {
+        auto matches = model->match(model->index(0, 0), TestModelB::idRole, data);
+        return matches.isEmpty() ? QModelIndex() : matches.first();
+    };
+
+    RoleCombineModel model(&modelA, &modelB, TestModelA::idRole, combineFunc);
+
+    modelA.addData(new DataA(0, "a0", &modelA));
+    modelA.addData(new DataA(1, "a1", &modelA));
+    modelB.addData(new DataB(0, "b0", &modelB));
+    modelB.addData(new DataB(1, "b1", &modelB));
+
+    ASSERT_EQ(model.rowCount(), 2);
+
+    // 模拟 apps 模型复位：清除所有数据并重新添加
+    // 当前实现没有连接 minor 的 modelReset，m_indexMap 中的映射会残留
+    // 这里只验证不会崩溃，以及重新添加后映射仍能正确工作
+    modelB.clear();
+    modelB.addData(new DataB(0, "b0_new", &modelB));
+    modelB.addData(new DataB(1, "b1_new", &modelB));
+    modelB.addData(new DataB(2, "b2_new", &modelB));
+
+    auto roleNames = model.roleNames();
+    auto roleNamesB = modelB.roleNames();
+    QHash<QByteArray, int> names2Role;
+    for (auto it = roleNames.constBegin(); it != roleNames.constEnd(); ++it) {
+        names2Role.insert(it.value(), it.key());
+    }
+    int bDataRole = names2Role.value(roleNamesB.value(TestModelB::dataRole));
+
+    // 重新添加后，映射应能正确找到新数据
+    // BUG: m_indexMap 中的旧映射没有重建，数据和索引可能不匹配
+    EXPECT_EQ(model.index(0, 0).data(bDataRole).toString(), "b0_new");
+    EXPECT_EQ(model.index(1, 0).data(bDataRole).toString(), "b1_new");
+}

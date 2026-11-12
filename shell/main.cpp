@@ -139,6 +139,7 @@ int main(int argc, char *argv[])
     setenv("DSG_APP_ID", "org.deepin.dde.shell", 0);
     DGuiApplicationHelper::setAttribute(DGuiApplicationHelper::UseInactiveColorGroup, false);
     DApplication a(argc, argv);
+    a.setQuitOnLastWindowClosed(false);
     // Don't apply to plugins
     qunsetenv("QT_SCALE_FACTOR");
     // dde-shell contains UI controls based on QML and Widget technologies.
@@ -240,7 +241,6 @@ int main(int argc, char *argv[])
         });
     }
 
-    shell.dconfigsMigrate();
     AppletConfigManager appletConfigManager;
     appletConfigManager.ensureAppletConfigs();
     // TODO disable qml's cache avoid to parsing error for ExecutionEngine.

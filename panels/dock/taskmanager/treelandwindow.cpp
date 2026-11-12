@@ -17,9 +17,9 @@
 Q_LOGGING_CATEGORY(waylandwindowLog, "org.deepin.dde.shell.dock.taskmanager.treelandwindow")
 
 namespace dock {
-ForeignToplevelHandle::ForeignToplevelHandle(struct ::treeland_foreign_toplevel_handle_v1 *object)
-    : QWaylandClientExtensionTemplate<ForeignToplevelHandle>(2)
-    , QtWayland::treeland_foreign_toplevel_handle_v1(object)
+ForeignToplevelHandle::ForeignToplevelHandle(struct ::treeland_foreign_toplevel_handle_v3 *object)
+    : QWaylandClientExtensionTemplate<ForeignToplevelHandle>(1)
+    , QtWayland::treeland_foreign_toplevel_handle_v3(object)
     , m_pid(0)
     , m_isReady(false)
     , m_identifier(0)
@@ -64,7 +64,7 @@ bool ForeignToplevelHandle::isReady() const
     return m_isReady;
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_pid(uint32_t pid)
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_pid(uint32_t pid)
 {
     if (pid == m_pid) return;
 
@@ -72,7 +72,7 @@ void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_pid(uint32_t pid
     Q_EMIT pidChanged();
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_title(const QString &title)
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_title(const QString &title)
 {
     if (title == m_title) return;
 
@@ -80,7 +80,7 @@ void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_title(const QStr
     Q_EMIT titleChanged();
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_app_id(const QString &app_id)
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_app_id(const QString &app_id)
 {
     if (app_id == m_appId) return;
     m_appId = app_id;
@@ -88,13 +88,13 @@ void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_app_id(const QSt
     Q_EMIT appidChanged();
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_identifier(uint32_t identifier)
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_identifier(uint32_t identifier)
 {
     if (identifier == m_identifier) return;
     m_identifier = identifier;
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_state(wl_array *state)
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_state(wl_array *state)
 {
     m_states.clear();
     const uint32_t* items = reinterpret_cast<const uint32_t*>(state->data);
@@ -107,14 +107,14 @@ void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_state(wl_array *
     Q_EMIT stateChanged();
 }
 
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_done()
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_done()
 {
     if (!m_isReady) {
         m_isReady = true;
         Q_EMIT handlerIsReady();
     }
 }
-void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v1_closed()
+void ForeignToplevelHandle::treeland_foreign_toplevel_handle_v3_closed()
 {
     destroy();
     Q_EMIT handlerIsDeleted();
@@ -226,11 +226,14 @@ void TreeLandWindow::killClient()
 
 void TreeLandWindow::setWindowIconGeometry(const QWindow* baseWindow, const QRect& gemeotry)
 {
-    auto waylandWindow = dynamic_cast<QtWaylandClient::QWaylandWindow*>(baseWindow->handle());
-    if (waylandWindow->surface() == nullptr || gemeotry.isEmpty())
+    if (!baseWindow)
         return;
 
-    m_foreignToplevelHandle->set_rectangle(waylandWindow->surface(), gemeotry.x(), gemeotry.y(), gemeotry.width(), gemeotry.height());
+    auto waylandWindow = dynamic_cast<QtWaylandClient::QWaylandWindow*>(baseWindow->handle());
+    if (!waylandWindow || waylandWindow->surface() == nullptr || gemeotry.isEmpty())
+        return;
+
+    m_foreignToplevelHandle->set_icon_geometry(waylandWindow->surface(), gemeotry.x(), gemeotry.y(), gemeotry.width(), gemeotry.height());
 }
 
 bool TreeLandWindow::isReady()

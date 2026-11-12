@@ -14,6 +14,7 @@ ContainmentItem {
     id: taskmanager
     property bool useColumnLayout: Panel.rootObject.useColumnLayout
     property int dockOrder: 16
+    readonly property bool fashionMode: Panel.fashionMode
 
     Accessible.role: Accessible.Grouping
     Accessible.name: qsTr("Task Manager")
@@ -24,7 +25,9 @@ ContainmentItem {
         return Panel.rootObject.dockRawCenterSpace - otherOccupied;
     }
 
-    readonly property real remainingSpacesForTaskManager: calcRemainingSpace(Panel.rootObject.dockItemMaxSize)
+    property real remainingSpacesForTaskManager: fashionMode
+        ? 0
+        : calcRemainingSpace(Panel.rootObject.dockItemMaxSize)
     readonly property int appTitleSpacing: Math.max(10, Math.round(Panel.rootObject.dockItemMaxSize * 9 / 14) / 3)
     // Start padding for the app container so that the visual gap
     // (multitask icon right edge → first app icon left edge) = appTitleSpacing.
@@ -40,17 +43,32 @@ ContainmentItem {
     readonly property real startPadding: Math.max(0, appTitleSpacing - (Panel.rootObject.dockItemMaxSize * (multitaskViewIconRatio - iconWidthToMaxSizeRatio) / 2))
 
     implicitWidth: {
-        let extra = useColumnLayout ? 0 : startPadding
-        let w = appContainer.implicitWidth + extra
-        let maxW = Panel.itemAlignment === Dock.LeftAlignment ? Math.max(remainingSpacesForTaskManager, w) : Math.min(remainingSpacesForTaskManager, w)
-        return useColumnLayout ? Panel.rootObject.dockSize : maxW
+        // In column layout the width is the cross axis: it is fixed to the dock
+        // size, so do not depend on appContainer.implicitWidth (the delegates
+        // read this implicitWidth back, which would cause a binding loop).
+        if (useColumnLayout)
+            return Panel.rootObject.dockSize
+        let w = appContainer.implicitWidth + startPadding
+        // Fashion mode hugs its content instead of filling the dock, and
+        // remainingSpacesForTaskManager is 0 there, so skip the clamping.
+        if (fashionMode)
+            return w
+        return Panel.itemAlignment === Dock.LeftAlignment ? Math.max(remainingSpacesForTaskManager, w) : Math.min(remainingSpacesForTaskManager, w)
     }
     implicitHeight: {
-        let extra = useColumnLayout ? startPadding : 0
-        let h = appContainer.implicitHeight + extra
-        let maxH = Panel.itemAlignment === Dock.LeftAlignment ? Math.max(remainingSpacesForTaskManager, h) : Math.min(remainingSpacesForTaskManager, h)
-        return useColumnLayout ? maxH : Panel.rootObject.dockSize
+        // In row layout the height is the cross axis: it is fixed to the dock
+        // size, so do not depend on appContainer.implicitHeight (the delegates
+        // read this implicitHeight back, which would cause a binding loop).
+        if (!useColumnLayout)
+            return Panel.rootObject.dockSize
+        let h = appContainer.implicitHeight + startPadding
+        // See implicitWidth: fashion mode sizes to its content.
+        if (fashionMode)
+            return h
+        return Panel.itemAlignment === Dock.LeftAlignment ? Math.max(remainingSpacesForTaskManager, h) : Math.min(remainingSpacesForTaskManager, h)
     }
+
+    onFashionModeChanged: taskmanager.Applet.setFashionMode(fashionMode)
     // Helper function to find the current index of an app by its appId in the visualModel
     function findAppIndex(appId) {
         for (let i = 0; i < visualModel.items.count; i++) {
@@ -84,7 +102,7 @@ ContainmentItem {
 
     TextCalculator {
         id: textCalculator
-        enabled: taskmanager.Applet.windowSplit && (Panel.position == Dock.Bottom || Panel.position == Dock.Top)
+        enabled: !fashionMode && taskmanager.Applet.windowSplit && (Panel.position == Dock.Bottom || Panel.position == Dock.Top)
         dataModel: taskmanager.Applet.dataModel
         iconSize: Panel.rootObject.dockSize * 9 / 14
         spacing: Math.max(10, Math.round(textCalculator.iconSize) / 3)
@@ -100,6 +118,8 @@ ContainmentItem {
     }
 
     OverflowContainer {
+        Accessible.role: Accessible.Pane
+        Accessible.id: "AppContainer"
         id: appContainer
         anchors.fill: parent
         anchors.leftMargin: useColumnLayout ? 0 : taskmanager.startPadding
@@ -129,6 +149,9 @@ ContainmentItem {
                 required property string title // winTitle
                 required property string iconName
                 required property string icon // winIconName
+                required property string folderType
+                required property var applicationFolderContents
+                required property var folderPresentation
                 required property string menus
                 required property list<string> windows
                 z: attention ? -1 : 0
@@ -205,6 +228,8 @@ ContainmentItem {
                     }
 
                     AppItem {
+                        Accessible.role: Accessible.ListItem
+                        Accessible.id: "AppItem"
                         id: appItem
                         anchors.fill: parent // This is mandatory for draggable item center in drop area
 
@@ -215,6 +240,9 @@ ContainmentItem {
                         itemId: delegateRoot.itemId
                         name: delegateRoot.name
                         iconName: delegateRoot.iconName
+                        folderType: delegateRoot.folderType
+                        applicationFolderContents: delegateRoot.applicationFolderContents
+                        folderPresentation: delegateRoot.folderPresentation
                         menus: delegateRoot.menus
                         windows: delegateRoot.windows
                         visualIndex: delegateRoot.visualIndex
@@ -238,7 +266,7 @@ ContainmentItem {
             id: launcherDndDropArea
             anchors.fill: parent
             z: 3
-            keys: ["text/x-dde-dock-dnd-appid"]
+            keys: ["text/x-dde-dock-dnd-appid", "text/x-dde-dock-dnd-folder"]
             property string launcherDndDesktopId: ""
             property string launcherDndDragSource: ""
             property string launcherDndWinId: ""
@@ -250,7 +278,7 @@ ContainmentItem {
             }
 
             onEntered: function(drag) {
-                let desktopId = drag.getDataAsString("text/x-dde-dock-dnd-appid")
+                let desktopId = drag.getDataAsString("text/x-dde-dock-dnd-folder") || drag.getDataAsString("text/x-dde-dock-dnd-appid")
                 launcherDndDragSource = drag.getDataAsString("text/x-dde-dock-dnd-source")
                 launcherDndWinId = drag.getDataAsString("text/x-dde-dock-dnd-winid")
                 launcherDndDesktopId = desktopId
@@ -292,6 +320,10 @@ ContainmentItem {
                     appIds.push(visualModel.items.get(i).model.itemId)
                 }
                 taskmanager.Applet.saveDockElementsOrder(appIds)
+                if (drop.formats.indexOf("text/x-dde-dock-dnd-folder") !== -1)
+                    drop.accept(Qt.CopyAction)
+                else
+                    drop.acceptProposedAction()
                 resetDndState()
             }
 
@@ -338,6 +370,7 @@ ContainmentItem {
     }
 
     Component.onCompleted: {
+        taskmanager.Applet.setFashionMode(fashionMode)
         Panel.rootObject.dockItemMaxSize = Qt.binding(function(){
             const dockSize = Panel.rootObject.dockSize;
             const appCount = visualModel.count;

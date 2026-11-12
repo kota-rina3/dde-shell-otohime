@@ -72,6 +72,7 @@ import org.deepin.ds.dock.tray 1.0 as DDT
 
 Item {
     id: root
+    Accessible.id: "TrayContainer_Item"
 
     required property DDT.TraySortOrderModel model
 
@@ -91,6 +92,8 @@ Item {
     property int dropHoverIndex: -1
     required property var surfaceAcceptor
     readonly property bool isDropping: dropArea.containsDrag
+    // 拖拽成功移入 stash 时的回调（命中 action-show-stash），由 tray.qml 传入
+    property var onStashDropSucceeded: null
 
     onIsDraggingChanged: {
         animationEnable = !isDragging
@@ -123,6 +126,7 @@ Item {
 
     // Delegates
     TrayItemDelegateChooser {
+        Accessible.id: "TrayContainer_Pane"
         id: trayItemDelegateChooser
         isHorizontal: root.isHorizontal
         collapsed: root.collapsed
@@ -149,6 +153,7 @@ Item {
         onEntered: function (dragEvent) {
             dragExited = false
             isDropped = false
+            dropHoverIndex = -1
             surfaceId = dragEvent.getDataAsString("text/x-dde-shell-tray-dnd-surfaceId")
             source = dragEvent.getDataAsString("text/x-dde-shell-tray-dnd-source")
             console.log(surfaceId, source)
@@ -168,12 +173,11 @@ Item {
             let currentItemIndex = dropIdx.index
             let isBefore = dropIdx.isBefore            
             let isStash = dragEvent.getDataAsString("text/x-dde-shell-tray-dnd-sectionType") === "stashed"
-            dropHoverIndex = dropIdx.index
-            
             // 检查当前悬停位置是否是禁止拖拽的插件
             let modelIndex = DDT.TraySortOrderModel.getModelIndexByVisualIndex(currentItemIndex)
             let sectionType = root.model.data(modelIndex, DDT.TraySortOrderModel.SectionTypeRole)
             if (sectionType === "fixed") {
+                dropHoverIndex = -1
                 dragEvent.accepted = false
                 return
             }
@@ -190,7 +194,14 @@ Item {
             }
             
             // 根据 ActionShowStashDelegate 的显示状态动态改变条件
-            let shouldAllowDrop = showStashActionVisible ? (dropHoverIndex !== 0) : (dropHoverIndex !== -1)
+            let shouldAllowDrop = showStashActionVisible ? (currentItemIndex !== 0) : (currentItemIndex !== -1)
+            let isApplicationTray = surfaceId.startsWith("application-tray")
+            if (!shouldAllowDrop && !isApplicationTray) {
+                dropHoverIndex = -1
+                dragEvent.accepted = false
+                return
+            }
+            dropHoverIndex = currentItemIndex
 
             if (shouldAllowDrop && (isStash || source === "quickPanel")) {
                 // 收纳区或快捷面板拖拽：使用暂存机制
@@ -202,8 +213,6 @@ Item {
                     DDT.TraySortOrderModel.dropToDockTray(surfaceId, Math.floor(currentItemIndex), isBefore)
                 }
                 dropTrayTimer.start()
-            } else if (!surfaceId.startsWith("application-tray")){
-                dragEvent.accepted = false
             }
         }
         
@@ -220,14 +229,25 @@ Item {
             if (isStash || source === "quickPanel") {
                 DDT.TraySortOrderModel.commitStagedDrop()
             } else {
+                // 检查是否放到了展开按钮上（命中 action-show-stash 分支，图标移入 stash）
+                // 在 dropToDockTray 之前检查，避免模型变更后索引失效
+                let modelIndex = DDT.TraySortOrderModel.getModelIndexByVisualIndex(Math.floor(currentItemIndex))
+                let dropOnSurfaceId = root.model.data(modelIndex, DDT.TraySortOrderModel.SurfaceIdRole)
+                let isDroppedOnStashButton = (dropOnSurfaceId === "internal/action-show-stash")
+
                 // 托盘内部拖拽直接提交
-                DDT.TraySortOrderModel.dropToDockTray(surfaceId, Math.floor(currentItemIndex), isBefore);
+                let success = DDT.TraySortOrderModel.dropToDockTray(surfaceId, Math.floor(currentItemIndex), isBefore);
+                if (isDroppedOnStashButton && success && onStashDropSucceeded) {
+                    onStashDropSucceeded()
+                }
             }
             DDT.TraySortOrderModel.actionsAlwaysVisible = false
+            dropHoverIndex = -1
         }
 
         onExited: function () {
             dragExited = true
+            dropHoverIndex = -1
             DDT.TraySortOrderModel.clearStagedDrop()
             // Hide action icons when drag leaves tray without dropping
             if (!isDropped) {

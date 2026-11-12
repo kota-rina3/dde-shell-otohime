@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -70,27 +70,13 @@ void Shell::setFlickableWheelDeceleration(const int &value)
 
 void Shell::dconfigsMigrate()
 {
+    const QHash<QString, QString> dconfigMigrationLists;
+    if (dconfigMigrationLists.isEmpty()) {
+        return;
+    }
+
     std::unique_ptr<Dtk::Core::DConfig> dconfig(Dtk::Core::DConfig::create("org.deepin.dde.shell", "org.deepin.dde.shell"));
     auto migratedDconfigs = dconfig->value(QStringLiteral("migratedDConfigs"), QVariantHash()).toHash();
-
-    // format appid/subpath/name
-    QHash<QString, QString> dconfigMigrationLists = {
-        // dock
-        {"org.deepin.dde.shell//org.deepin.ds.dock", "org.deepin.ds.dock//org.deepin.ds.dock"},
-        {"org.deepin.dde.shell//org.deepin.ds.dock.taskmanager", "org.deepin.ds.dock//org.deepin.ds.dock.taskmanager"},
-        {"org.deepin.dde.shell//org.deepin.ds.dock.tray", "org.deepin.ds.dock//org.deepin.ds.dock.tray"},
-
-        // tray-loader
-        {"org.deepin.dde.tray-loader//org.deepin.dde.network", "org.deepin.dde.tray.network//org.deepin.dde.network"},
-        {"org.deepin.dde.tray-loader//org.deepin.dde.dock", "org.deepin.dde.dock//org.deepin.dde.dock"},
-        {"org.deepin.dde.tray-loader//org.deepin.dde.dock.plugin.quick-panel", "org.deepin.dde.dock//org.deepin.dde.dock.plugin.quick-panel"},
-        {"org.deepin.dde.tray-loader//org.deepin.dde.dock.plugin.common", "org.deepin.dde.dock//org.deepin.dde.dock.plugin.common"},
-        {"org.deepin.dde.tray-loader//org.deepin.dde.dock.plugin.power", "org.deepin.dde.dock//org.deepin.dde.dock.plugin.power"},
-        {"org.deepin.dde.tray-loader//org.deepin.dde.dock.plugin.sound","org.deepin.dde.dock//org.deepin.dde.dock.plugin.sound"},
-
-        // launchpad
-        {"org.deepin.dde.shell//org.deepin.ds.launchpad","dde-launchpad//org.deepin.dde.launchpad.appsmodel"},
-    };
 
     for (auto it = dconfigMigrationLists.constBegin(); it != dconfigMigrationLists.constEnd(); ++it) {
         auto newConf = it.key();
@@ -124,8 +110,13 @@ bool Shell::dconfigMigrate(const QString &newConf, const QString &oldConf)
     auto oldLastIndex = oldConf.lastIndexOf('/');
     auto oldFirstIndex = oldConf.indexOf('/');
 
-    std::unique_ptr<Dtk::Core::DConfig> newDconfig(Dtk::Core::DConfig::create(newConf.left(newFirstIndex), newConf.mid(newLastIndex + 1), newConf.mid(newFirstIndex + 1, newLastIndex - newFirstIndex - 1)));
-    std::unique_ptr<Dtk::Core::DConfig> oldDconfig(Dtk::Core::DConfig::create(oldConf.left(oldFirstIndex), oldConf.mid(oldLastIndex + 1), oldConf.mid(oldFirstIndex + 1, oldLastIndex - newFirstIndex - 1)));
+    const QString newAppId = newConf.left(newFirstIndex);
+    const QString newName = newConf.mid(newLastIndex + 1);
+    const QString oldAppId = oldConf.left(oldFirstIndex);
+    const QString oldName = oldConf.mid(oldLastIndex + 1);
+
+    std::unique_ptr<Dtk::Core::DConfig> newDconfig(Dtk::Core::DConfig::create(newAppId, newName, newConf.mid(newFirstIndex + 1, newLastIndex - newFirstIndex - 1)));
+    std::unique_ptr<Dtk::Core::DConfig> oldDconfig(Dtk::Core::DConfig::create(oldAppId, oldName, oldConf.mid(oldFirstIndex + 1, oldLastIndex - oldFirstIndex - 1)));
 
     if (!newDconfig->isValid() || !oldDconfig->isValid()) {
         return false;

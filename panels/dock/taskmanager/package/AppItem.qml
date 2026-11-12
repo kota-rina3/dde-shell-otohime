@@ -26,17 +26,26 @@ Item {
     required property var modelIndex
     required property string title
 
+    property var applicationFolderContents: []
+    property string folderType: ""
+    property var folderPresentation: null
+    readonly property bool isFolder: folderType !== ""
     property real blendOpacity: 1.0
 
     signal dropFilesOnItem(itemId: string, files: list<string>)
     signal dragFinished()
 
-    Drag.active: mouseArea.drag.active
+    // Binding Drag.active to mouseArea.drag.active would make Drag.active read
+    // back the very property it drives (see visible/fixPosition below),
+    // causing a QML binding loop. Set it imperatively from the MouseArea instead.
+    Drag.active: false
     Drag.source: root
     Drag.hotSpot.x: icon.width / 2
     Drag.hotSpot.y: icon.height / 2
     Drag.dragType: Drag.Automatic
-    Drag.mimeData: { "text/x-dde-dock-dnd-appid": itemId, "text/x-dde-dock-dnd-source": "taskbar", "text/x-dde-dock-dnd-winid": windows.length > 0 ? windows[0] : ""}
+    Drag.mimeData: root.folderPresentation
+        ? { "text/x-dde-dock-dnd-folder": itemId, "text/x-dde-dock-dnd-source": "taskbar" }
+        : { "text/x-dde-dock-dnd-appid": itemId, "text/x-dde-dock-dnd-source": "taskbar", "text/x-dde-dock-dnd-winid": windows.length > 0 ? windows[0] : ""}
 
     Accessible.role: Accessible.Button
     Accessible.name: root.name
@@ -72,6 +81,8 @@ Item {
     }
 
     AppItemPalette {
+        Accessible.role: Accessible.Pane
+        Accessible.id: "ItemPalette"
         id: itemPalette
         displayMode: root.displayMode
         colorTheme: root.colorTheme
@@ -80,11 +91,14 @@ Item {
     }
 
     Control {
-        anchors.fill: parent
         id: appItem
+        width: root.useColumnLayout ? parent.width : hoverBackground.width
+        height: root.useColumnLayout ? hoverBackground.height : parent.height
+        anchors.centerIn: parent
         implicitWidth: root.titleActive ? (root.iconSize + hoverBackground.horizontalSpacing + titleLoader.width) : iconContainer.width
         visible: !root.Drag.active // When in dragging, hide app item
         background: AppItemBackground {
+            Accessible.ignored: true
             id: hoverBackground
 
             readonly property int verticalSpacing: Math.round(root.iconSize / 8) + 1
@@ -120,6 +134,10 @@ Item {
                         anchors.left: parent.left
                         anchors.horizontalCenter: undefined
                     }
+                    PropertyChanges {
+                        target: iconContainer
+                        anchors.leftMargin: hoverBackground.horizontalSpacing
+                    }
                 },
                 State {
                     name: "nonTitleActive"
@@ -150,13 +168,24 @@ Item {
 
             D.DciIcon {
                 id: icon
-                name: root.iconName
+                name: root.isFolder ? "" : root.iconName
                 height: iconSize
                 width: iconSize
                 sourceSize: Qt.size(iconSize, iconSize)
                 anchors.centerIn: parent
                 retainWhileLoading: true
                 smooth: false
+
+                Loader {
+                    anchors.centerIn: parent
+                    width: parent.width - 2
+                    height: parent.height - 2
+                    active: root.isFolder
+                    sourceComponent: FolderIcon {
+                        contents: root.applicationFolderContents
+                        presentation: root.folderPresentation
+                    }
+                }
 
                 function mapToScene(px, py) {
                     return parent.mapToItem(Window.window.contentItem, Qt.point(px, py))
@@ -202,15 +231,16 @@ Item {
                     }
                 }
                 LaunchAnimation {
+                    Accessible.id: "AppItem_Pane_2"
                     id: launchAnimation
                     launchSpace: {
                         switch (Panel.position) {
                         case Dock.Top:
                         case Dock.Bottom:
-                            return (root.height - icon.height) / 2
+                            return hoverBackground.verticalSpacing
                         case Dock.Left:
                         case Dock.Right:
-                            return (root.width - icon.width) / 2
+                            return hoverBackground.horizontalSpacing
                         }
                     }
 
@@ -234,6 +264,8 @@ Item {
         }
 
         WindowIndicator {
+            Accessible.role: Accessible.Indicator
+            Accessible.id: "WindowIndicator"
             id: windowIndicator
             dotWidth: root.useColumnLayout  ? Math.max(iconSize / 16, 2) : Math.max(iconSize / 3, 2)
             dotHeight: root.useColumnLayout ? Math.max(iconSize / 3, 2) : Math.max(iconSize / 16, 2)
@@ -291,6 +323,8 @@ Item {
         }
 
         AppItemTitle {
+            Accessible.role: Accessible.StaticText
+            Accessible.id: "TitleLoader"
             id: titleLoader
             anchors.left: iconContainer.right
             anchors.leftMargin: Math.round(root.iconSize / 8)
@@ -380,6 +414,52 @@ Item {
                     root.onEntered()
                 } else {
                     root.onExited()
+                }
+            }
+        }
+    }
+
+    function openFolder() {
+        toolTip.close()
+        closeItemPreview()
+        if (folderUi.item)
+            folderUi.item.popup.openAt(root.mapToItem(null, root.width / 2, root.height / 2))
+    }
+
+    // One source-neutral popup instance handles launcher folders and provider
+    // content. The provider presentation selects its own page inside the same
+    // popup lifecycle and positioning template.
+    Loader {
+        id: folderUi
+        active: root.isFolder
+        sourceComponent: Item {
+            property alias popup: folderPopup
+            property alias contextMenu: folderContextMenu
+            FolderContextMenu {
+                id: folderContextMenu
+                registry: TaskManager
+                onOpenRequested: root.openFolder()
+                onUndockRequested: TaskManager.requestUndockByDesktopId(root.itemId)
+            }
+            FolderPopup {
+                id: folderPopup
+                folderName: root.name
+                contents: root.applicationFolderContents
+                presentation: root.folderPresentation
+                interactionActive: applicationMenu.busy
+                onActivated: function(entry) {
+                    close()
+                    TaskManager.launchFolderApplication(entry.id)
+                }
+                onContextMenuRequested: function(entry) {
+                    applicationMenu.openFor(entry, TaskManager.folderApplicationBackend())
+                }
+            }
+            FolderApplicationMenu {
+                id: applicationMenu
+                onLaunchRequested: function(id) {
+                    folderPopup.close()
+                    TaskManager.launchFolderApplication(id)
                 }
             }
         }
@@ -483,23 +563,30 @@ Item {
 
     function requestAppItemMenu() {
         Panel.requestClosePopup()
+        if (root.isFolder) {
+            if (folderUi.item) folderUi.item.contextMenu.openFor(root.folderType, root.itemId, root.name)
+            return
+        }
         contextMenuLoader.trashEmpty = TaskManager.isTrashEmpty()
         contextMenuLoader.active = true
         MenuHelper.openMenu(contextMenuLoader.item)
     }
 
     MouseArea {
+        Accessible.id: "AppItem_Pane_6"
         id: mouseArea
         anchors.fill: parent
         hoverEnabled: false
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         drag.target: root
         drag.onActiveChanged: {
+            root.Drag.active = drag.active
             if (!drag.active) {
                 Panel.contextDragging = false
                 root.dragFinished()
                 return
             }
+            if (folderUi.item) folderUi.item.popup.close()
             Panel.contextDragging = true
         }
 
@@ -535,6 +622,10 @@ Item {
             if (mouse.button === Qt.RightButton) {
                 requestAppItemMenu()
             } else {
+                if (root.isFolder) {
+                    root.openFolder()
+                    return
+                }
                 if (root.windows.length === 0) {
                     launchAnimation.start();
                     TaskManager.requestNewInstance(index, "");
@@ -545,12 +636,16 @@ Item {
         }
 
         PanelToolTip {
+            Accessible.role: Accessible.ToolTip
+            Accessible.id: "ToolTip"
             id: toolTip
             toolTipX: DockPanelPositioner.x
             toolTipY: DockPanelPositioner.y
         }
 
         PanelToolTip {
+            Accessible.role: Accessible.ToolTip
+            Accessible.id: "MoveToTrash"
             id: dragToolTip
             text: qsTr("Move to Trash")
             toolTipX: DockPanelPositioner.x

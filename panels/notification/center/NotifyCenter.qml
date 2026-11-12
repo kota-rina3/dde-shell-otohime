@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -46,6 +46,8 @@ FocusScope {
         objectName: "notificationCenter"
         anchors.fill: parent
         NotifyHeader {
+            Accessible.id: "NotifyCenter_AlertMessage"
+            Accessible.role: Accessible.Pane
             id: header
             anchors {
                 top: parent.top
@@ -72,6 +74,8 @@ FocusScope {
         }
 
         NotifyView {
+            Accessible.id: "NotifyCenter_AlertMessage_2"
+            Accessible.role: Accessible.List
             id: view
             anchors {
                 left: parent.left
@@ -95,6 +99,8 @@ FocusScope {
         }
 
         DropShadowText {
+            Accessible.id: "NotifyCenter_Pane_2"
+            Accessible.role: Accessible.StaticText
             text: qsTr("No recent notifications")
             visible: root.stagingViewCount === 0 && view.viewCount === 0
             anchors {

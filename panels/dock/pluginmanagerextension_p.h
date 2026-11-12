@@ -8,13 +8,15 @@
 #include <QPointer>
 #include <QQuickWindow>
 #include <QtWaylandCompositor/QWaylandCompositor>
+#include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandQuickExtension>
 #include <QtWaylandCompositor/QWaylandResource>
 #include <QtWaylandCompositor/QWaylandSeat>
-#include <QtWaylandCompositor/QWaylandShellSurfaceTemplate>
+#include <QtWaylandCompositor/QWaylandShellSurface>
 #include <QtWaylandCompositor/QWaylandSurface>
 
 #include <cstdint>
+#include <limits>
 
 #include "qwayland-server-fractional-scale-v1.h"
 #include "qwayland-server-plugin-manager-v1.h"
@@ -22,7 +24,7 @@
 class PluginSurface;
 class PluginPopup;
 class PluginScale;
-class PluginScaleManager : public QWaylandCompositorExtensionTemplate<PluginScaleManager>, public QtWaylandServer::wp_fractional_scale_manager_v1
+class PluginScaleManager : public QWaylandCompositorExtension, public QtWaylandServer::wp_fractional_scale_manager_v1
 {
     Q_OBJECT
     QML_ELEMENT
@@ -30,6 +32,10 @@ class PluginScaleManager : public QWaylandCompositorExtensionTemplate<PluginScal
 
 public:
     PluginScaleManager(QWaylandCompositor *compositor = nullptr);
+    const struct wl_interface *extensionInterface() const override
+    {
+        return QtWaylandServer::wp_fractional_scale_manager_v1::interface();
+    }
     uint32_t pluginScale();
     void setPluginScale(const uint32_t &scale);
 
@@ -49,10 +55,14 @@ class PluginScale : public QWaylandCompositorExtensionTemplate<PluginScale>, pub
     Q_OBJECT
 public:
     PluginScale(PluginScaleManager *manager, QWaylandSurface *surface, const QWaylandResource &resource);
+    const struct wl_interface *extensionInterface() const override
+    {
+        return QtWaylandServer::wp_fractional_scale_v1::interface();
+    }
     void wp_fractional_scale_v1_destroy(Resource *resource) override;
 };
 
-class PluginManager : public QWaylandCompositorExtensionTemplate<PluginManager>, public QtWaylandServer::plugin_manager_v1
+class PluginManager : public QWaylandCompositorExtension, public QtWaylandServer::plugin_manager_v1
 {
     Q_OBJECT
     QML_ELEMENT
@@ -60,9 +70,14 @@ class PluginManager : public QWaylandCompositorExtensionTemplate<PluginManager>,
     Q_PROPERTY(uint32_t dockPosition READ dockPosition WRITE setDockPosition)
     Q_PROPERTY(uint32_t dockColorTheme READ dockColorTheme WRITE setDockColorTheme)
     Q_PROPERTY(QSize dockSize READ dockSize WRITE setDockSize NOTIFY dockSizeChanged FINAL)
+    Q_PROPERTY(bool fashionMode READ fashionMode WRITE setFashionMode NOTIFY fashionModeChanged FINAL)
 
 public:
     PluginManager(QWaylandCompositor *compositor = nullptr);
+    const struct wl_interface *extensionInterface() const override
+    {
+        return QtWaylandServer::plugin_manager_v1::interface();
+    }
     void initialize() override;
 
     Q_INVOKABLE void updateDockOverflowState(int state);
@@ -88,6 +103,9 @@ public:
     QSize dockSize() const;
     void setDockSize(const QSize &newDockSize);
 
+    bool fashionMode() const;
+    void setFashionMode(bool newFashionMode);
+
     void removePluginSurface(PluginSurface *plugin);
 
     //处理鼠标焦点给到相应插件
@@ -102,6 +120,7 @@ Q_SIGNALS:
     void pluginSurfaceDestroyed(PluginSurface*);
     void messageRequest(PluginSurface *, const QString &msg);
     void dockSizeChanged();
+    void fashionModeChanged();
     void requestShutdown(const QString &type);
     // Signal emitted when XEmbed window move is requested
     // Parameters: wid (window ID), pluginId, itemKey, dx, dy, anchorWindow (the window containing the plugin item)
@@ -125,6 +144,7 @@ private:
     void sendEventMsg(const QString &msg);
     void sendEventMsg(Resource *target, const QString &msg);
     QString dockSizeMsg() const;
+    QString fashionModeMsg() const;
     QString popupMinHeightMsg() const;
     using PluginSurfaceCallback = std::function<void(Resource *)>;
     void foreachPluginSurface(PluginSurfaceCallback callback);
@@ -141,6 +161,7 @@ private:
     uint32_t m_dockPosition = 0;
     uint32_t m_dockColorTheme = 0;
     QSize m_dockSize;
+    bool m_fashionMode = false;
     int m_popupMinHeight = 0;
     
     // Map of pending XEmbed callbacks: wid -> callback info
@@ -148,7 +169,7 @@ private:
     QMap<uint32_t, PendingXEmbedCallback> m_pendingXEmbedCallbacks;
 };
 
-class PluginSurface : public QWaylandShellSurfaceTemplate<PluginSurface>, public QtWaylandServer::plugin
+class PluginSurface : public QWaylandShellSurface, public QtWaylandServer::plugin
 {
     Q_OBJECT
     Q_PROPERTY(QString pluginId READ pluginId CONSTANT)
@@ -160,6 +181,7 @@ class PluginSurface : public QWaylandShellSurfaceTemplate<PluginSurface>, public
     Q_PROPERTY(int height READ height NOTIFY heightChanged)
     Q_PROPERTY(int width READ width NOTIFY widthChanged)
     Q_PROPERTY(bool isItemActive WRITE setItemActive READ isItemActive NOTIFY itemActiveChanged)
+    Q_PROPERTY(int cardOrder READ cardOrder NOTIFY cardOrderChanged)
     Q_PROPERTY(QString dccIcon READ dccIcon CONSTANT)
     Q_PROPERTY(int margins READ margins WRITE setMargins NOTIFY marginsChanged FINAL)
     QML_ELEMENT
@@ -174,6 +196,10 @@ public:
                   const QString &itemKey, const QString &displayName,
                   int pluginFlags, int pluginType, int sizePolicy,
                   QWaylandSurface *surface, const QWaylandResource &resource);
+    const struct wl_interface *extensionInterface() const override
+    {
+        return QtWaylandServer::plugin::interface();
+    }
     QWaylandQuickShellIntegration *
     createIntegration(QWaylandQuickShellSurfaceItem *item) override;
 
@@ -195,6 +221,12 @@ public:
     void setItemActive(bool isActive);
     bool isItemActive() const;
 
+    // Sort order of a card surface, reported by the plugin.  Smaller comes
+    // first; cards sharing a value keep the order their surfaces were created
+    // in.  Until a plugin reports its order the card sorts last.
+    int cardOrder() const;
+    void setCardOrder(int order);
+
     Q_INVOKABLE void updatePluginGeometry(const QRect &geometry);
     Q_INVOKABLE void setGlobalPos(const QPoint &pos);
     Q_INVOKABLE void setAnchorWindow(QQuickWindow *window);
@@ -209,6 +241,7 @@ public:
 
 signals:
     void itemActiveChanged();
+    void cardOrderChanged();
     void heightChanged();
     void widthChanged();
     void recvMouseEvent(QEvent::Type type);
@@ -239,6 +272,7 @@ private:
     uint32_t m_sizePolicy;
 
     bool m_isItemActive = false;
+    int m_cardOrder = std::numeric_limits<int>::max();
     int m_margins = 0;
     int m_height;
     int m_width;
@@ -246,7 +280,7 @@ private:
     QPointer<QQuickWindow> m_anchorWindow;
 };
 
-class PluginPopup : public QWaylandShellSurfaceTemplate<PluginPopup>, public QtWaylandServer::plugin_popup
+class PluginPopup : public QWaylandShellSurface, public QtWaylandServer::plugin_popup
 {
     Q_OBJECT
     Q_PROPERTY(int32_t x READ x WRITE setX NOTIFY xChanged)
@@ -262,6 +296,10 @@ class PluginPopup : public QWaylandShellSurfaceTemplate<PluginPopup>, public QtW
 public:
     PluginPopup(PluginManager* shell, const QString &pluginId, const QString &itemKey, int x, int y, int popupType,
                 QWaylandSurface *surface, const QWaylandResource &resource);
+    const struct wl_interface *extensionInterface() const override
+    {
+        return QtWaylandServer::plugin_popup::interface();
+    }
     QWaylandQuickShellIntegration *createIntegration(QWaylandQuickShellSurfaceItem *item) override;
 
     QWaylandSurface *surface() const;

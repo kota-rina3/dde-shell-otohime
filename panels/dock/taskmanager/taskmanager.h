@@ -11,6 +11,7 @@
 #include "dockglobalelementmodel.h"
 #include "dockitemmodel.h"
 #include "hoverpreviewproxymodel.h"
+#include "foldermenuregistry.h"
 
 #include <QPointer>
 
@@ -26,6 +27,7 @@ class TaskManager : public DS_NAMESPACE::DContainment, public AbstractTaskManage
     Q_PROPERTY(bool windowFullscreen READ windowFullscreen NOTIFY windowFullscreenChanged)
     Q_PROPERTY(bool allowForceQuit READ allowForceQuit NOTIFY allowedForceQuitChanged)
     Q_PROPERTY(bool showAttentionAnimation READ showAttentionAnimation NOTIFY showAttentionAnimationChanged)
+    Q_PROPERTY(bool fashionMode READ fashionMode NOTIFY fashionModeChanged)
 
 public:
     enum Roles {
@@ -43,6 +45,9 @@ public:
         ItemIdRole,
         MenusRole,
         WindowsRole,
+        ApplicationFolderContentsRole,
+        FolderTypeRole,
+        FolderPresentationRole,
 
         // from dde-apps
         DesktopIdRole = 0x1000,
@@ -84,6 +89,9 @@ public:
     bool windowFullscreen();
     bool allowForceQuit();
     bool showAttentionAnimation();
+    // Synced from QML (Panel.fashionMode); the window split is not applied in fashion mode.
+    Q_INVOKABLE void setFashionMode(bool fashionMode);
+    bool fashionMode();
 
     Q_INVOKABLE void requestActivate(const QModelIndex &index) const override;
     Q_INVOKABLE void requestNewInstance(const QModelIndex &index, const QString &action = QString()) const override;
@@ -110,6 +118,13 @@ public:
     Q_INVOKABLE void moveItem(int from, int to);
     Q_INVOKABLE QString getTrashTipText();
 
+    // A folder-source plugin can append actions without changing the dock UI.
+    Q_INVOKABLE bool registerFolderMenuProvider(const QString &folderType, QObject *provider);
+    Q_INVOKABLE void unregisterFolderMenuProvider(const QString &folderType, QObject *provider);
+    Q_INVOKABLE QVariantList folderMenuItems(const QString &folderType, const QString &folderId, const QString &folderName) const;
+    Q_INVOKABLE bool triggerFolderMenuAction(const QString &folderType, const QString &folderId, const QString &actionId) const;
+    Q_INVOKABLE QObject *folderApplicationBackend() const;
+    Q_INVOKABLE void launchFolderApplication(const QString &id) const;
     Q_INVOKABLE bool isTrashEmpty() const;
 Q_SIGNALS:
     void dataModelChanged();
@@ -117,12 +132,14 @@ Q_SIGNALS:
     void windowFullscreenChanged(bool);
     void allowedForceQuitChanged();
     void showAttentionAnimationChanged();
+    void fashionModeChanged();
 
 private Q_SLOTS:
     void handleWindowAdded(QPointer<AbstractWindow> window);
     void modifyOpacityChanged();
 
 private:
+    FolderMenuRegistry m_folderMenuRegistry;
     QScopedPointer<AbstractWindowMonitor> m_windowMonitor;
     bool m_windowFullscreen;
     DockCombineModel *m_activeAppModel = nullptr;

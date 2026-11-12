@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -35,10 +35,13 @@ Item {
 
     StackView {
         id: panelView
+        Accessible.id: "QuickPanelPage_StackView"
         property int contentHeight: currentItem ? currentItem.height : 10
         width: currentItem ? currentItem.width : 10
         height: panelView.contentHeight
         initialItem: PanelPluginPage {
+            Accessible.id: "QuickPanelPage_Pane"
+            Accessible.role: Accessible.Pane
             id: panelPage
             model: root.model
             StackView.onActivating: function () {
@@ -53,6 +56,8 @@ Item {
     Component {
         id: subPluginPageLoader
         SubPluginPage {
+            Accessible.id: "QuickPanelPage_Pane_3"
+            Accessible.role: Accessible.Pane
             width: panelPage.width
             onRequestBack: function () {
                 panelView.pop()

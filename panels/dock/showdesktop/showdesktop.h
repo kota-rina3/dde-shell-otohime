@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -6,7 +6,7 @@
 
 #include "applet.h"
 #include "dsglobal.h"
-#include "treelandwindowmanager.h"
+#include "treelandcompositoraction.h"
 
 #include <DConfig>
 
@@ -35,7 +35,7 @@ private slots:
     void onEnableShowDesktopChanged();
 
 private:
-    TreelandWindowManager *m_windowManager;
+    TreelandCompositorAction *m_compositorAction;
     Dtk::Core::DConfig *m_dockConfig;
     bool m_visible;
 };

@@ -9,9 +9,11 @@
 #include <QThread>
 #include <QSignalSpy>
 #include <QVariant>
+#include <QStandardItemModel>
 
 #include "notifyserverapplet.h"
 #include "notificationmanager.h"
+#include "notificationsetting.h"
 
 using namespace notification;
 using ::testing::_;
@@ -34,7 +36,6 @@ public:
     MOCK_METHOD(void, removeNotifications, (const QString &appName));
     MOCK_METHOD(void, removeNotifications, ());
     MOCK_METHOD(void, removeExpiredNotifications, ());
-    MOCK_METHOD(void, setBlockClosedId, (qint64 id));
 };
 
 // Test fixture for NotifyServerApplet
@@ -80,7 +81,7 @@ TEST_F(NotifyServerAppletTest, DestructorMemoryLeakTest) {
     auto *testApplet = new NotifyServerApplet();
     
     // Initialize the applet (creates m_manager, m_worker, and DbusAdaptors)
-    bool initResult = testApplet->init();
+    testApplet->init();
     
     // Even if init fails (e.g., D-Bus not available), we should clean up properly
     // Record the state before deletion
@@ -244,17 +245,6 @@ TEST_F(NotifyServerAppletTest, RemoveExpiredNotificationsTest) {
     EXPECT_NO_THROW(applet->removeExpiredNotifications());
 }
 
-// Test setBlockClosedId
-TEST_F(NotifyServerAppletTest, SetBlockClosedIdTest) {
-    // Initialize applet first
-    applet->init();
-    
-    qint64 testId = 12345;
-    
-    // Test that setBlockClosedId doesn't crash
-    EXPECT_NO_THROW(applet->setBlockClosedId(testId));
-}
-
 // Test notificationStateChanged signal
 TEST_F(NotifyServerAppletTest, NotificationStateChangedSignalTest) {
     // Initialize applet first
@@ -315,16 +305,6 @@ TEST_F(NotifyServerAppletTest, NotificationClosedEdgeCasesTest) {
     EXPECT_NO_THROW(applet->notificationClosed(999999999, 999999, 3));
 }
 
-// Test edge cases for setBlockClosedId
-TEST_F(NotifyServerAppletTest, SetBlockClosedIdEdgeCasesTest) {
-    applet->init();
-    
-    // Test with various ID values
-    EXPECT_NO_THROW(applet->setBlockClosedId(0));
-    EXPECT_NO_THROW(applet->setBlockClosedId(-1));
-    EXPECT_NO_THROW(applet->setBlockClosedId(9223372036854775807LL)); // max qint64
-}
-
 // Test that applet properly inherits from DApplet
 TEST_F(NotifyServerAppletTest, InheritanceTest) {
     EXPECT_TRUE(applet->inherits("ds::DApplet"));
@@ -369,6 +349,24 @@ TEST_F(NotifyServerAppletTest, AppValueEmptyAppIdTest) {
     
     QVariant result = applet->appValue(QString(), 0);
     (void)result; // Suppress unused warning
+}
+
+// Test that deleting the app model accessor does not leave a dangling pointer
+TEST_F(NotifyServerAppletTest, AppAccessorDestroyedTest) {
+    auto *setting = new NotificationSetting();
+    auto *model = new QStandardItemModel();
+    setting->setAppAccessor(model);
+    EXPECT_NE(setting->appAccessor(), nullptr);
+
+    delete model;
+    model = nullptr;
+
+    EXPECT_EQ(setting->appAccessor(), nullptr);
+    EXPECT_NO_THROW({
+        EXPECT_TRUE(setting->apps().isEmpty());
+    });
+
+    delete setting;
 }
 
 // Main function for tests

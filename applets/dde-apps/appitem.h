@@ -78,5 +78,16 @@ public:
 
     QString desktopSourcePath() const;
     void setDesktopSourcePath(const QString &desktopSourcePath);
+
+    QString vendor() const;
+    void setVendor(const QString &vendor);
+
+    // Share the fallback-selected GenericName with display and search consumers.
+    QString genericName() const;
+    void setGenericName(const QString &genericName);
+
+    // Store locale-selected Keywords for model consumers, avoiding a second metadata reader.
+    QStringList keywords() const;
+    void setKeywords(const QStringList &keywords);
 };
 }

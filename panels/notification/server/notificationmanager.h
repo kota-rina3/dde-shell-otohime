@@ -7,7 +7,7 @@
 #include <QDBusContext>
 #include <QDBusVariant>
 
-class QTimer;
+class QDBusPendingCallWatcher;
 namespace notification {
 
 class NotifyEntity;
@@ -24,6 +24,8 @@ public:
 
 public:
     bool registerDbusService();
+    // Main/model-thread shutdown step, before the manager is deleted on its worker.
+    void stopAppMonitoring();
 
     uint recordCount() const;
     Q_INVOKABLE void actionInvoked(qint64 id, const QString &actionKey);
@@ -68,14 +70,12 @@ public Q_SLOTS:
     void SetSystemInfo(uint configItem, const QVariant &value);
     QVariant GetSystemInfo(uint configItem);
 
-    void setBlockClosedId(qint64 id);
 private:
     bool isDoNotDisturb() const;
     bool recordNotification(NotifyEntity &entity);
     void tryPlayNotificationSound(const NotifyEntity &entity, const QString &appId, bool dndMode) const;
     void emitRecordCountChanged();
 
-    void pushPendingEntity(const NotifyEntity &entity, int expireTimeout);
     void updateEntityProcessed(qint64 id, uint reason);
     void updateEntityProcessed(const NotifyEntity &entity);
 
@@ -84,25 +84,21 @@ private:
     bool isExtendedAction(qint64 id, const QString &actionId) const;
     bool invokeShellAction(const QString &data);
     void initScreenLockedState();
+    void queryScreenLockedState();
 
 private slots:
-    void onHandingPendingEntities();
-    void removePendingEntity(const NotifyEntity &entity);
     void onScreenLockedChanged(bool);
 
 private:
     uint m_replacesCount = 0;
     bool m_screenLocked = false;
+    QDBusPendingCallWatcher *m_screenLockedQueryWatcher = nullptr;
 
     DataAccessor *m_persistence = nullptr;
     NotificationSetting *m_setting = nullptr;
-    QTimer *m_pendingTimeout = nullptr;
-    qint64 m_lastTimeoutPoint = std::numeric_limits<qint64>::max();
-    QMultiHash<qint64, NotifyEntity> m_pendingTimeoutEntities;
     QStringList m_systemApps;
     QMap<QString, QVariant> m_appNamesMap;
     int m_cleanupDays = 7;
-    qint64 m_blockClosedId = 0;
 };
 
 } // notification

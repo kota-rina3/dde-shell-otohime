@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -59,6 +59,8 @@ Item {
     }
 
     PanelTrayItem {
+        Accessible.id: "QuickPanel_Pane"
+        Accessible.role: Accessible.Button
         id: panelTrayItem
         shellSurface: quickpanelModel.trayItemSurface
         isOpened: popup.popupVisible
@@ -74,6 +76,8 @@ Item {
     }
 
     PanelPopup {
+        Accessible.id: "QuickPanel_Dialog"
+        Accessible.role: Accessible.Dialog
         id: popup
         width: popupContent.width
         height: popupContent.height
@@ -81,10 +85,14 @@ Item {
         popupY: DockPanelPositioner.y
 
         QuickPanelPage {
+            Accessible.id: "QuickPanel_Pane_2"
+            Accessible.role: Accessible.Pane
             id: popupContent
             model: quickpanelModel
 
             DDT.SurfacePopup {
+                Accessible.id: "QuickPanel_Dialog_3"
+                Accessible.role: Accessible.Dialog
                 objectName: "quickpanel"
                 surfaceAcceptor: function (surfaceId) {
                     let pluginId = pluginIdBySurfaceId(surfaceId)
@@ -101,6 +109,8 @@ Item {
 
     // trayItem's popup
     DDT.TrayItemSurfacePopup {
+        Accessible.id: "QuickPanel_Dialog_6"
+        Accessible.role: Accessible.Dialog
         id: trayItemSurfacePopup
         surfaceAcceptor: isTrayItemPopup
         surfaceFilter: function (surfaceId) {

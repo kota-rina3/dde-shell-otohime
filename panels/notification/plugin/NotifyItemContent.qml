@@ -10,6 +10,8 @@ import org.deepin.dtk.style 1.0 as DStyle
 import org.deepin.ds.notification
 
 NotifyItem {
+    Accessible.id: "NotifyItemContent_AlertMessage"
+    Accessible.role: Accessible.ListItem
     id: root
     implicitWidth: impl.implicitWidth
     implicitHeight: impl.implicitHeight
@@ -73,6 +75,7 @@ NotifyItem {
         anchors.fill: parent
 
         Item {
+            Accessible.id: "NotifyItemContent_Item"
             anchors.fill: parent
             z: -1
             enabled: root.enableDismissed
@@ -115,6 +118,8 @@ NotifyItem {
                 // Show when mouse hovers or notification item has focus
                 active: !(root.strongInteractive && root.actions.length > 0) && (root.closeVisible || closePlaceHolder.hovered)
                 sourceComponent: SettingActionButton {
+                    Accessible.id: "NotifyItemContent_Button"
+                    Accessible.role: Accessible.Button
                     id: closeBtn
                     objectName: "closeNotify-" + root.appName
                     icon.name: "clean-alone"
@@ -259,6 +264,7 @@ NotifyItem {
                     text: root.title
                     visible: text !== ""
                     maximumLineCount: 1
+                    textFormat: Text.PlainText
                     font {
                         pixelSize: DTK.fontManager.t8.pixelSize
                         family: DTK.fontManager.t8.family
@@ -278,6 +284,7 @@ NotifyItem {
                     Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                     Text {
                         id: bodyText
+                        Accessible.id: "NotifyItemContent_Text"
                         Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                         // text 宽度若让Layout通过implicitWidth计算会导致ListView的add动画出现位置错误，故这里手动计算Text的宽度
                         Layout.preferredWidth: NotifyStyle.contentItem.width - appIcon.width
@@ -332,6 +339,8 @@ NotifyItem {
                     Layout.alignment: Qt.AlignRight | Qt.AlignBottom
                     Layout.topMargin: 8
                     sourceComponent: NotifyAction {
+                        Accessible.id: "NotifyItemContent_AlertMessage_2"
+                        Accessible.role: Accessible.Button
                         actions: root.actions
                         onActionInvoked: function (actionId) {
                             root.actionInvoked(actionId)
@@ -353,6 +362,8 @@ NotifyItem {
             }
         }
 
-        background: NotifyItemBackground { }
+        background: NotifyItemBackground {
+            Accessible.ignored: true
+        }
     }
 }

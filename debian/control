@@ -40,7 +40,7 @@ Build-Depends:
  qt6-wayland-dev-tools,
  qt6-wayland-private-dev,
  systemd,
- treeland-protocols (>> 0.5.7),
+ treeland-protocols (>= 0.9.0),
  wayland-protocols,
 Standards-Version: 4.6.2
 Homepage: https://github.com/linuxdeepin/dde-shell
@@ -71,7 +71,8 @@ Description: DDE Shell dock library
 Package: dde-shell
 Architecture: any
 Depends:
- dde-tray-loader (>= 1.99.8),
+ dde-session (>= 2.0.33),
+ dde-tray-loader (>= 2.0.41),
  libdde-shell (= ${binary:Version}),
  libdde-shell-dock (= ${binary:Version}),
  libdtk6declarative,

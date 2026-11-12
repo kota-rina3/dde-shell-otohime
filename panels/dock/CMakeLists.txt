@@ -9,7 +9,7 @@ configure_file(environments.h.in environments.h @ONLY)
 find_package(PkgConfig REQUIRED)
 find_package(Qt${QT_VERSION_MAJOR} ${REQUIRED_QT_VERSION} COMPONENTS Core DBus Gui Qml WaylandCompositor Widgets WaylandClient)
 find_package(DdeTrayLoader REQUIRED)
-find_package(TreelandProtocols REQUIRED)
+find_package(TreelandProtocols 0.7.0 REQUIRED)
 pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)
 
 file(
@@ -26,8 +26,8 @@ file(
     dockhelper.cpp
     waylanddockhelper.h
     waylanddockhelper.cpp
-    loadtrayplugins.h
-    loadtrayplugins.cpp
+    layershellextension.h
+    layershellextension.cpp
 )
 
 # Old dbus interface compatible
@@ -63,7 +63,9 @@ qt_generate_wayland_protocol_client_sources(dockpanel
     NO_INCLUDE_CORE_ONLY
     FILES
         ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-wallpaper-color-v1.xml
-        ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-dde-shell-v1.xml
+        ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-xwindow-control-unstable-v1.xml
+        ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-region-watch-unstable-v1.xml
+        ${TREELAND_PROTOCOLS_DATA_DIR}/treeland-layer-shell-extension-unstable-v1.xml
 )
 
 target_link_libraries(dockpanel PRIVATE
@@ -97,7 +99,7 @@ ds_install_package(PACKAGE org.deepin.ds.dock TARGET dockpanel)
 ds_handle_package_translation(PACKAGE org.deepin.ds.dock)
 
 # sub plugins
-#add_subdirectory(cardleft)
+add_subdirectory(cardleft)
 add_subdirectory(showdesktop)
 add_subdirectory(taskmanager)
 add_subdirectory(tray)

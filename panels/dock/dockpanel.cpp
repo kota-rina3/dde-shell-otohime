@@ -6,6 +6,8 @@
 #include "constants.h"
 #include "dockadaptor.h"
 #include "docksettings.h"
+#include "layershell/dlayershellwindow.h"
+#include "layershellextension.h"
 #include "panel.h"
 #include "pluginfactory.h"
 #include "waylanddockhelper.h"
@@ -15,16 +17,22 @@
 #include "dockdbusproxy.h"
 #include "dockfrontadaptor.h"
 #include "dockdaemonadaptor.h"
-#include "loadtrayplugins.h"
 
 #include <DGuiApplicationHelper>
+#include <QEnterEvent>
 #include <QGuiApplication>
 #include <QLoggingCategory>
+#include <QMouseEvent>
 #include <QProcess>
 #include <QQuickItem>
 #include <QQuickWindow>
 
 #include <wayland/xdgactivation.h>
+
+#include <QtWaylandClient/private/qwaylanddisplay_p.h>
+#include <QtWaylandClient/private/qwaylandinputdevice_p.h>
+#include <QtWaylandClient/private/qwaylandscreen_p.h>
+#include <QtWaylandClient/private/qwaylandwindow_p.h>
 
 #ifdef HAVE_DDE_API_EVENTLOGGER
 #include <dde-api/eventlogger.hpp>
@@ -41,15 +49,25 @@ DockPanel::DockPanel(QObject *parent)
     , m_theme(ColorTheme::Dark)
     , m_hideState(Show)
     , m_dockScreen(nullptr)
-    , m_loadTrayPlugins(new LoadTrayPlugins(this))
     , m_compositorReady(false)
     , m_launcherShown(false)
     , m_contextDragging(false)
     , m_isResizing(false)
 {
+    connect(this, &DockPanel::fashionModeChanged, this, &DockPanel::syncSpotlightTracking);
+    connect(this, &DockPanel::hideStateChanged, this, &DockPanel::syncSpotlightTracking);
+    connect(this, &DockPanel::rootObjectChanged, this, &DockPanel::syncSpotlightTracking);
+
+    // The org.deepin.dde.Dock1 service name is used as the readiness flag of the
+    // Type=dbus systemd unit (dde-shell@DDE.service). It must only be acquired
+    // after the QML DockCompositor is created, so that tray plugin loader
+    // services ordered After=dde-shell@DDE.service can rely on it being safe
+    // to connect to the dockplugin Wayland socket.
     connect(this, &DockPanel::compositorReadyChanged, this, [this] {
         if (!m_compositorReady) return;
-        m_loadTrayPlugins->loadDockPlugins();
+        if (!QDBusConnection::sessionBus().registerService("org.deepin.dde.Dock1")) {
+            qCWarning(dockLog) << "Failed to register org.deepin.dde.Dock1 after compositor ready";
+        }
     });
 }
 
@@ -61,6 +79,19 @@ bool DockPanel::load()
 
 bool DockPanel::init()
 {
+    // Normalize legacy/hand-edited configurations before exporting the state
+    // to D-Bus or creating the QML panel.
+    if (!SETTINGS->fashionModeEnabled()
+        && SETTINGS->itemAlignment() == ItemAlignment::FashionAlignment) {
+        // 时尚模式没有放开时，已保存的时尚模式回退成居中模式
+        SETTINGS->setItemAlignment(ItemAlignment::CenterAlignment);
+    }
+
+    if (SETTINGS->itemAlignment() == ItemAlignment::FashionAlignment
+        && (SETTINGS->position() == Position::Left || SETTINGS->position() == Position::Right)) {
+        SETTINGS->setPosition(Position::Bottom);
+    }
+
     DockAdaptor* adaptor = new DockAdaptor(this);
     Q_UNUSED(adaptor)
     QDBusConnection::sessionBus().registerService("org.deepin.ds.Dock");
@@ -70,7 +101,10 @@ bool DockPanel::init()
     DockDBusProxy* proxy = new DockDBusProxy(this);
     DockFrontAdaptor* dockFrontAdaptor = new DockFrontAdaptor(proxy);
     Q_UNUSED(dockFrontAdaptor)
-    QDBusConnection::sessionBus().registerService("org.deepin.dde.Dock1");
+    // NOTE: the object is exported here, but the org.deepin.dde.Dock1 service
+    // name is only acquired once the compositor is ready, see the constructor.
+    // It is the BusName of the Type=dbus unit dde-shell@DDE.service and thus
+    // defines when systemd considers the dock started.
     QDBusConnection::sessionBus().registerObject("/org/deepin/dde/Dock1", "org.deepin.dde.Dock1", proxy);
 
     DockDaemonAdaptor* dockDaemonAdaptor = new DockDaemonAdaptor(proxy);
@@ -100,6 +134,7 @@ bool DockPanel::init()
     });
     connect(SETTINGS, &DockSettings::positionChanged, this, [this, dockDaemonAdaptor](){
         Q_EMIT positionChanged(position());
+        Q_EMIT fashionModeChanged();
         Q_EMIT dockDaemonAdaptor->PositionChanged(position());
         Q_EMIT dockDaemonAdaptor->FrontendWindowRectChanged(frontendWindowRect());
 
@@ -117,9 +152,34 @@ bool DockPanel::init()
     connect(SETTINGS, &DockSettings::dockSizeChanged, this, &DockPanel::dockSizeChanged);
     connect(SETTINGS, &DockSettings::hideModeChanged, this, &DockPanel::hideModeChanged);
     connect(SETTINGS, &DockSettings::itemAlignmentChanged, this, &DockPanel::itemAlignmentChanged);
+    connect(SETTINGS, &DockSettings::itemAlignmentChanged, this, [this](){
+        // 时尚模式没有放开时不允许切过去，把对齐方式改回居中
+        if (!fashionModeEnabled() && SETTINGS->itemAlignment() == ItemAlignment::FashionAlignment) {
+            SETTINGS->setItemAlignment(ItemAlignment::CenterAlignment);
+            return;
+        }
+
+        // Fashion mode only supports top/bottom positions. If the dock is
+        // currently on the left/right edge when the user switches to fashion
+        // mode, snap it to bottom so the layout stays valid and the value
+        // persisted for the control center is consistent.
+        if (SETTINGS->itemAlignment() == ItemAlignment::FashionAlignment
+            && (position() == Position::Left || position() == Position::Right)) {
+            setPosition(Position::Bottom);
+        }
+        Q_EMIT fashionModeChanged();
+    });
     connect(SETTINGS, &DockSettings::indicatorStyleChanged, this, &DockPanel::indicatorStyleChanged);
     connect(SETTINGS, &DockSettings::lockedChanged, this, &DockPanel::lockedChanged);
     connect(SETTINGS, &DockSettings::contextMenuEnabledChanged, this, &DockPanel::contextMenuEnabledChanged);
+    connect(SETTINGS, &DockSettings::fashionModeEnabledChanged, this, [this](bool enabled){
+        // 开关被关掉时，正处于时尚模式的任务栏要回退成居中模式
+        if (!enabled && SETTINGS->itemAlignment() == ItemAlignment::FashionAlignment) {
+            SETTINGS->setItemAlignment(ItemAlignment::CenterAlignment);
+        }
+        Q_EMIT fashionModeEnabledChanged(enabled);
+    });
+    connect(SETTINGS, &DockSettings::cardCurrentChanged, this, &DockPanel::cardCurrentChanged);
 
     connect(SETTINGS, &DockSettings::dockSizeChanged, this, [this, dockDaemonAdaptor](){
         Q_EMIT dockDaemonAdaptor->WindowSizeEfficientChanged(dockSize());
@@ -167,6 +227,7 @@ bool DockPanel::init()
         m_helper = new WaylandDockHelper(this);
         connect(static_cast<WaylandDockHelper *>(m_helper), &WaylandDockHelper::xembedWindowMoveResult,
                 this, &DockPanel::xembedWindowMoveResult);
+        m_dockShellExtensionManager.reset(new TreeLandLayerShellExtensionManager());
         // Fallback to DGuiApplicationHelper for theme color when wayland wallpaper color is not available.
         // TODO: remove this when initWallpaperColorManager is re-enabled
         QObject::connect(Dtk::Gui::DGuiApplicationHelper::instance(), &Dtk::Gui::DGuiApplicationHelper::themeTypeChanged,
@@ -299,6 +360,23 @@ void DockPanel::setItemAlignment(const ItemAlignment& alignment)
     SETTINGS->setItemAlignment(alignment);
 }
 
+bool DockPanel::fashionMode()
+{
+    const auto dockPosition = position();
+    return itemAlignment() == FashionAlignment
+        && (dockPosition == Top || dockPosition == Bottom);
+}
+
+QString DockPanel::cardCurrent() const
+{
+    return SETTINGS->cardCurrent();
+}
+
+void DockPanel::setCardCurrent(const QString &cardCurrent)
+{
+    SETTINGS->setCardCurrent(cardCurrent);
+}
+
 IndicatorStyle DockPanel::indicatorStyle()
 {
     return SETTINGS->indicatorStyle();
@@ -421,10 +499,20 @@ void DockPanel::launcherVisibleChanged(bool visible)
 
 void DockPanel::updateDockScreen()
 {
-    auto win = window();
+    auto *win = window();
     if (!win)
         return;
-    setDockScreen(qApp->primaryScreen());
+
+    auto *primary = qApp->primaryScreen();
+    setDockScreen(primary);
+    if (sender() != qApp || !primary || win->screen() != primary || win->isVisible() || hideState() != Show)
+        return;
+
+    auto *waylandScreen = dynamic_cast<QtWaylandClient::QWaylandScreen *>(primary->handle());
+    if (!waylandScreen || !waylandScreen->output())
+        return;
+    if (DS_NAMESPACE::DLayerShellWindow::get(win)->ensureWaylandShellIntegration())
+        win->show();
 }
 
 bool DockPanel::showInPrimary() const
@@ -451,6 +539,11 @@ bool DockPanel::locked() const
 bool DockPanel::contextMenuEnabled() const
 {
     return SETTINGS->contextMenuEnabled();
+}
+
+bool DockPanel::fashionModeEnabled() const
+{
+    return SETTINGS->fashionModeEnabled();
 }
 
 void DockPanel::setLocked(bool newLocked)
@@ -499,11 +592,60 @@ qreal DockPanel::devicePixelRatio() const
 
 bool DockPanel::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == window() && event->type() == QEvent::DevicePixelRatioChange) {
+    if (watched != window())
+        return false;
+
+    if (event->type() == QEvent::DevicePixelRatioChange) {
         Q_EMIT devicePixelRatioChanged(window()->devicePixelRatio());
+    } else if (m_spotlightTracking) {
+        // Observe the window before delivery to Qt Quick controls. No
+        // per-item handlers, coordinate reports or periodic cursor queries.
+        switch (event->type()) {
+        case QEvent::Enter:
+            setCursorPosition(static_cast<QEnterEvent *>(event)->position());
+            setContainsMouse(true);
+            break;
+        case QEvent::MouseMove: {
+            const auto position = static_cast<QMouseEvent *>(event)->position();
+            setCursorPosition(position);
+            // A pressed control may keep its grab after the pointer leaves.
+            setContainsMouse(QRectF(QPointF(), window()->size()).contains(position));
+            break;
+        }
+        case QEvent::Leave:
+        case QEvent::Hide:
+            setContainsMouse(false);
+            break;
+        default:
+            break;
+        }
     }
 
     return false;
+}
+
+void DockPanel::syncSpotlightTracking()
+{
+    // Cache the mode so the hot event path never needs to query settings.
+    m_spotlightTracking = fashionMode() && hideState() == Show;
+    if (!m_spotlightTracking)
+        setContainsMouse(false);
+}
+
+void DockPanel::setContainsMouse(bool containsMouse)
+{
+    if (m_containsMouse == containsMouse)
+        return;
+    m_containsMouse = containsMouse;
+    Q_EMIT containsMouseChanged(containsMouse);
+}
+
+void DockPanel::setCursorPosition(const QPointF &cursorPosition)
+{
+    if (m_cursorPosition == cursorPosition)
+        return;
+    m_cursorPosition = cursorPosition;
+    Q_EMIT cursorPositionChanged(cursorPosition);
 }
 
 bool DockPanel::contextDragging() const
@@ -541,6 +683,94 @@ bool DockPanel::moveXEmbedWindow(uint32_t wid, double dx, double dy, QQuickWindo
         return m_helper->moveXEmbedWindow(wid, dx, dy, anchorWindow);
     }
     return false;
+}
+
+bool DockPanel::beginResize()
+{
+    uint edges = 0;
+    int minW = 0, maxW = 0, minH = 0, maxH = 0;
+    switch (position()) {
+    case Position::Left:
+        edges = TreeLandLayerShellExtensionObject::resize_edge_right;
+        minW = MIN_DOCK_SIZE;
+        maxW = MAX_DOCK_SIZE;
+        break;
+    case Position::Right:
+        edges = TreeLandLayerShellExtensionObject::resize_edge_left;
+        minW = MIN_DOCK_SIZE;
+        maxW = MAX_DOCK_SIZE;
+        break;
+    case Position::Top:
+        edges = TreeLandLayerShellExtensionObject::resize_edge_bottom;
+        minH = MIN_DOCK_SIZE;
+        maxH = MAX_DOCK_SIZE;
+        break;
+    case Position::Bottom:
+        edges = TreeLandLayerShellExtensionObject::resize_edge_top;
+        minH = MIN_DOCK_SIZE;
+        maxH = MAX_DOCK_SIZE;
+        break;
+    default:
+        Q_UNREACHABLE();
+        break;
+    }
+
+    if (!m_dockShellExtensionManager) {
+        qCWarning(dockLog) << "beginResize: layer shell extension manager is null";
+        return false;
+    }
+
+    if (!m_dockShellExtensionManager->isActive()) {
+        qCWarning(dockLog) << "beginResize: layer shell extension manager inactive";
+        return false;
+    }
+
+    auto *w = window();
+    if (!w) {
+        qCWarning(dockLog) << "beginResize: window is null";
+        return false;
+    }
+
+    auto *waylandWindow = dynamic_cast<QtWaylandClient::QWaylandWindow *>(w->handle());
+    if (!waylandWindow) {
+        qCWarning(dockLog) << "beginResize: failed to get QWaylandWindow";
+        return false;
+    }
+
+    auto *surface = waylandWindow->wlSurface();
+
+    if (!surface) {
+        qCWarning(dockLog) << "beginResize: wl_surface is null";
+        return false;
+    }
+
+    auto *inputDevice = waylandWindow->display()->lastInputDevice();
+
+    if (!inputDevice) {
+        qCWarning(dockLog) << "beginResize: no last input device";
+        return false;
+    }
+
+    auto *dockSurface = m_dockShellExtensionManager->getLayerShellExtensionObject(surface);
+
+    if (!dockSurface) {
+        qCWarning(dockLog) << "beginResize: failed to get layer shell extension object";
+        return false;
+    }
+    if (m_dockShellExtensionObject)
+        return false;
+    m_dockShellExtensionObject = new TreeLandLayerShellExtensionObject(dockSurface, surface);
+    m_dockShellExtensionObject->setParent(this);
+    connect(m_dockShellExtensionObject, &TreeLandLayerShellExtensionObject::resizingChanged, this, [this](bool resizing) {
+        setIsResizing(resizing);
+        if (!resizing) {
+            m_dockShellExtensionObject->deleteLater();
+        }
+    });
+
+    m_dockShellExtensionObject->beginResize(inputDevice->wl_seat(), inputDevice->serial(), edges, minW, minH, maxW, maxH);
+    inputDevice->handleEndDrag();
+    return true;
 }
 }
 

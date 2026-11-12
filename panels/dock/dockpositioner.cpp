@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -8,6 +8,7 @@
 #include <QLoggingCategory>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QTimer>
 
 DS_USE_NAMESPACE
@@ -34,9 +35,16 @@ DockPositioner::DockPositioner(DPanel *panel, QObject *parent)
     connect(m_positionTimer, &QTimer::timeout, this, &DockPositioner::updatePosition);
 
     Q_ASSERT(m_panel);
+    if (auto window = m_panel->window()) {
+        connect(window, &QWindow::screenChanged, this, &DockPositioner::setScreen);
+        setScreen(window->screen());
+    }
     connect(m_panel, SIGNAL(positionChanged(Position)), this, SLOT(update()));
     connect(m_panel, SIGNAL(geometryChanged(QRect)), this, SLOT(update()));
-    connect(this, &DockPositioner::boundingChanged, this, &DockPositioner::update);
+    // The popup may be opened in the same event-loop turn as its anchor is
+    // assigned. Calculate anchor changes immediately so its first frame does
+    // not use the default (0, 0) position.
+    connect(this, &DockPositioner::boundingChanged, this, &DockPositioner::updatePosition);
 }
 
 DockPositioner::~DockPositioner()
@@ -73,6 +81,23 @@ int DockPositioner::x() const
 int DockPositioner::y() const
 {
     return m_y;
+}
+
+void DockPositioner::setScreen(QScreen *screen)
+{
+    if (m_screen == screen) return;
+    if (m_screen) disconnect(m_screen, nullptr, this, nullptr);
+    m_screen = screen;
+    if (m_screen) {
+        connect(m_screen, &QScreen::availableGeometryChanged, this, &DockPositioner::availableGeometryChanged);
+        connect(m_screen, &QObject::destroyed, this, &DockPositioner::availableGeometryChanged);
+    }
+    emit availableGeometryChanged();
+}
+
+QRect DockPositioner::availableGeometry() const
+{
+    return m_screen ? m_screen->availableGeometry() : QRect();
 }
 
 QRect DockPositioner::dockGeometry() const

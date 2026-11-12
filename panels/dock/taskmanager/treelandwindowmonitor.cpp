@@ -19,18 +19,18 @@
 
 namespace dock {
 ForeignToplevelManager::ForeignToplevelManager(TreeLandWindowMonitor* monitor)
-    : QWaylandClientExtensionTemplate<ForeignToplevelManager>(2)
+    : QWaylandClientExtensionTemplate<ForeignToplevelManager, &QtWayland::treeland_foreign_toplevel_manager_v3::destroy>(1)
     , m_monitor(monitor)
 {
 }
 
-void ForeignToplevelManager::treeland_foreign_toplevel_manager_v1_toplevel(struct ::treeland_foreign_toplevel_handle_v1 *toplevel)
+void ForeignToplevelManager::treeland_foreign_toplevel_manager_v3_toplevel(struct ::treeland_foreign_toplevel_handle_v3 *toplevel)
 {
     ForeignToplevelHandle* handle = new ForeignToplevelHandle(toplevel);
     connect(handle, &ForeignToplevelHandle::handlerIsReady, m_monitor, &TreeLandWindowMonitor::handleForeignToplevelHandleAdded, Qt::UniqueConnection);
 }
 
-TreeLandDockPreviewContext::TreeLandDockPreviewContext(struct ::treeland_dock_preview_context_v1 *context)
+TreeLandDockPreviewContext::TreeLandDockPreviewContext(struct ::treeland_dock_preview_context_v3 *context)
     : QWaylandClientExtensionTemplate<TreeLandDockPreviewContext>(1)
     , m_isPreviewEntered(false)
     , m_isDockMouseAreaEnter(false)
@@ -51,7 +51,8 @@ TreeLandDockPreviewContext::TreeLandDockPreviewContext(struct ::treeland_dock_pr
 
 TreeLandDockPreviewContext::~TreeLandDockPreviewContext()
 {
-    destroy();
+    if (isInitialized())
+        destroy();
 }
 
 void TreeLandDockPreviewContext::showWindowsPreview(QByteArray windowsId, int32_t previewXoffset, int32_t previewYoffset, uint32_t direction)
@@ -66,12 +67,12 @@ void TreeLandDockPreviewContext::hideWindowsPreview()
     m_hideTimer->start();
 }
 
-void TreeLandDockPreviewContext::treeland_dock_preview_context_v1_enter()
+void TreeLandDockPreviewContext::treeland_dock_preview_context_v3_enter()
 {
     m_isPreviewEntered = true;
 }
 
-void TreeLandDockPreviewContext::treeland_dock_preview_context_v1_leave()
+void TreeLandDockPreviewContext::treeland_dock_preview_context_v3_leave()
 {
     m_isPreviewEntered = false;
     m_hideTimer->start();
@@ -170,11 +171,7 @@ void TreeLandWindowMonitor::requestPreview(QAbstractItemModel *sourceModel,
             byteArray.resize(size);
             memcpy(byteArray.data(), array.constData(), size);
             m_dockPreview->showWindowsPreview(byteArray, previewXoffset, previewYoffset, direction);
-        } else {
-            m_dockPreview->show_tooltip("???", previewXoffset, previewYoffset, direction);
         }
-    } else {
-        m_dockPreview->show_tooltip("???", previewXoffset, previewYoffset, direction);
     }
 }
 
@@ -233,7 +230,7 @@ void TreeLandWindowMonitor::handleForeignToplevelHandleRemoved()
 void TreeLandWindowMonitor::updateFullscreenState()
 {
     for (auto window : std::as_const(m_windows)) {
-        if (window && window->isFullscreen()) {
+        if (window && window->isFullscreen() && !window->isMinimized()) {
             if (!m_fullscreenState) {
                 m_fullscreenState = true;
                 emit windowFullscreenChanged(true);

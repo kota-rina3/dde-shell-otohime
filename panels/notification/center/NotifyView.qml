@@ -26,6 +26,7 @@ Control {
     signal gotoHeaderLast()   // Signal to cycle Shift+Tab back to header last button
 
     NotifySetting {
+        Accessible.id: "NotifyView_AlertMessage"
         id: notifySetting
         notifyModel: root.notifyModel
     }
@@ -60,13 +61,16 @@ Control {
 
     contentItem: ListView {
         id: view
+        Accessible.id: "NotifyView_ListView"
         clip: true
         spacing: 10
         snapMode: ListView.NoSnap
         keyNavigationEnabled: false
         activeFocusOnTab: false
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { }
+        ScrollBar.vertical: ScrollBar {
+            Accessible.id: "Scrollbar"
+        }
         topMargin: 20
         bottomMargin: 10
         leftMargin: NotifyStyle.leftMargin
@@ -125,6 +129,7 @@ Control {
 
         model: root.notifyModel
         delegate: NotifyViewDelegate {
+            Accessible.id: "NotifyView_AlertMessage_2"
             id: notifyDelegate
             notifyModel: root.notifyModel
             view: view
@@ -248,5 +253,8 @@ Control {
         }
     }
 
-    background: BoundingRectangle {}
+    background: BoundingRectangle {
+        Accessible.id: "NotifyView_Pane_2"
+        Accessible.role: Accessible.Pane
+    }
 }

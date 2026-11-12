@@ -88,6 +88,7 @@ void RoleGroupModel::setSourceModel(QAbstractItemModel *model)
                 m_rowMap.removeOne(sourceRows);
                 delete sourceRows;
                 endRemoveRows();
+                --i;
             }
         }
         adjustMap(first, -((last - first) + 1));
@@ -208,6 +209,25 @@ QVariant RoleGroupModel::data(const QModelIndex &index, int role) const
         // 直接返回对应源项目的数据
         return sourceModel()->index(list->value(index.row()), 0).data(role);
     }
+}
+
+QMap<int, QVariant> RoleGroupModel::itemData(const QModelIndex &index) const
+{
+    QMap<int, QVariant> roles;
+    for (int i = 0; i < Qt::UserRole; ++i) {
+        const QVariant value = data(index, i);
+        if (value.isValid())
+            roles.insert(i, value);
+    }
+
+    const auto names = roleNames();
+    for (auto it = names.cbegin(); it != names.cend(); ++it) {
+        const QVariant value = data(index, it.key());
+        if (value.isValid())
+            roles.insert(it.key(), value);
+    }
+
+    return roles;
 }
 
 QModelIndex RoleGroupModel::index(int row, int column, const QModelIndex &parent) const

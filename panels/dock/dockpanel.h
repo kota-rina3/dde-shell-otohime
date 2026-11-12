@@ -10,10 +10,12 @@
 
 #include <QDBusContext>
 #include <QPointer>
+#include <QPointF>
 
 namespace dock {
 class DockHelper;
-class LoadTrayPlugins;
+class TreeLandLayerShellExtensionManager;
+class TreeLandLayerShellExtensionObject;
 
 class DockPanel : public DS_NAMESPACE::DPanel, public QDBusContext
 {
@@ -30,18 +32,23 @@ class DockPanel : public DS_NAMESPACE::DPanel, public QDBusContext
     Q_PROPERTY(HideMode hideMode READ hideMode WRITE setHideMode NOTIFY hideModeChanged FINAL)
     Q_PROPERTY(Position position READ position WRITE setPosition NOTIFY positionChanged FINAL)
     Q_PROPERTY(ItemAlignment itemAlignment READ itemAlignment WRITE setItemAlignment NOTIFY itemAlignmentChanged FINAL)
+    Q_PROPERTY(bool fashionMode READ fashionMode NOTIFY fashionModeChanged FINAL)
     Q_PROPERTY(IndicatorStyle indicatorStyle READ indicatorStyle WRITE setIndicatorStyle NOTIFY indicatorStyleChanged FINAL)
     Q_PROPERTY(bool showInPrimary READ showInPrimary WRITE setShowInPrimary NOTIFY showInPrimaryChanged FINAL)
     Q_PROPERTY(QString screenName READ screenName NOTIFY screenNameChanged FINAL)
     Q_PROPERTY(bool locked READ locked WRITE setLocked NOTIFY lockedChanged FINAL)
     Q_PROPERTY(bool isResizing READ isResizing WRITE setIsResizing NOTIFY isResizingChanged FINAL)
     Q_PROPERTY(bool contextMenuEnabled READ contextMenuEnabled NOTIFY contextMenuEnabledChanged FINAL)
+    Q_PROPERTY(bool fashionModeEnabled READ fashionModeEnabled NOTIFY fashionModeEnabledChanged FINAL)
+    Q_PROPERTY(QString cardCurrent READ cardCurrent WRITE setCardCurrent NOTIFY cardCurrentChanged FINAL)
 
     Q_PROPERTY(qreal devicePixelRatio READ devicePixelRatio NOTIFY devicePixelRatioChanged FINAL)
 
     Q_PROPERTY(bool debugMode READ debugMode FINAL CONSTANT)
 
     Q_PROPERTY(bool contextDragging READ contextDragging WRITE setContextDragging NOTIFY contextDraggingChanged FINAL)
+    Q_PROPERTY(bool containsMouse READ containsMouse NOTIFY containsMouseChanged FINAL)
+    Q_PROPERTY(QPointF cursorPosition READ cursorPosition NOTIFY cursorPositionChanged FINAL)
 
 public:
     explicit DockPanel(QObject *parent = nullptr);
@@ -73,6 +80,14 @@ public:
     ItemAlignment itemAlignment();
     void setItemAlignment(const ItemAlignment& alignment);
 
+    bool fashionMode();
+
+    // The card shown in the card area, kept as "pluginId::itemKey" so it stays
+    // valid across restarts even when the card surfaces show up in a different
+    // order than before.
+    QString cardCurrent() const;
+    void setCardCurrent(const QString &cardCurrent);
+
     IndicatorStyle indicatorStyle();
     void setIndicatorStyle(const IndicatorStyle& style);
 
@@ -91,12 +106,17 @@ public:
     // anchorWindow: the window containing the plugin item (dock panel or popup window)
     Q_INVOKABLE bool moveXEmbedWindow(uint32_t wid, double dx, double dy, QQuickWindow *anchorWindow = nullptr);
 
+    Q_INVOKABLE bool beginResize();
+
     bool showInPrimary() const;
     void setShowInPrimary(bool newShowInPrimary);
 
     bool locked() const;
     void setLocked(bool newLocked);
     bool contextMenuEnabled() const;
+    // 时尚模式是否允许开启，对应 DConfig 的 enableFashionMode，默认关闭。
+    // 关闭时右键菜单不显示时尚模式入口，已保存的时尚模式也会回退成居中模式。
+    bool fashionModeEnabled() const;
 
     void setHideState(HideState newHideState);
     QScreen* dockScreen();
@@ -108,6 +128,9 @@ public:
     bool contextDragging() const;
     void setContextDragging(bool newContextDragging);
 
+    bool containsMouse() const { return m_containsMouse; }
+    QPointF cursorPosition() const { return m_cursorPosition; }
+
     bool isResizing() const;
     void setIsResizing(bool resizing);
 
@@ -118,6 +141,7 @@ private Q_SLOTS:
     void onWindowGeometryChanged();
     void launcherVisibleChanged(bool visible);
     void updateDockScreen();
+    void syncSpotlightTracking();
 
 Q_SIGNALS:
     void geometryChanged(QRect geometry);
@@ -131,6 +155,8 @@ Q_SIGNALS:
     void beforePositionChanged(Position beforePosition);
     void positionChanged(Position position);
     void itemAlignmentChanged(ItemAlignment alignment);
+    void fashionModeChanged();
+    void cardCurrentChanged(const QString &cardCurrent);
     void indicatorStyleChanged(IndicatorStyle style);
     void showInPrimaryChanged(bool showInPrimary);
     void dockScreenChanged(QScreen *screen);
@@ -140,24 +166,34 @@ Q_SIGNALS:
     void devicePixelRatioChanged(qreal ratio);
     void lockedChanged(bool locked);
     void contextMenuEnabledChanged(bool enabled);
+    void fashionModeEnabledChanged(bool enabled);
 
     void contextDraggingChanged();
+    void containsMouseChanged(bool containsMouse);
+    void cursorPositionChanged(const QPointF &cursorPosition);
     void isResizingChanged(bool isResizing);
 
     // Emitted when async XEmbed window move completes
     void xembedWindowMoveResult(uint32_t wid, bool success);
 
 private:
+    void setContainsMouse(bool containsMouse);
+    void setCursorPosition(const QPointF &cursorPosition);
+
+    bool m_spotlightTracking = false;
+    bool m_containsMouse = false;
+    QPointF m_cursorPosition;
     ColorTheme m_theme;
     HideState m_hideState;
     DockHelper* m_helper;
     QPointer<QScreen> m_dockScreen;
-    LoadTrayPlugins *m_loadTrayPlugins;
     bool m_compositorReady;
     bool m_launcherShown;
     bool m_contextDragging;
     bool m_isResizing;
     QRect m_frontendWindowRect;
+    QScopedPointer<TreeLandLayerShellExtensionManager> m_dockShellExtensionManager;
+    QPointer<TreeLandLayerShellExtensionObject> m_dockShellExtensionObject;
 };
 
 }

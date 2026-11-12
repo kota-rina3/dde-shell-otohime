@@ -10,6 +10,8 @@
 namespace apps {
 class AppItemModel : public QStandardItemModel
 {
+    Q_OBJECT
+
 public:
     enum Roles {
         DesktopIdRole = AppGroupManager::ExtendRole,
@@ -32,6 +34,9 @@ public:
         ExecsRole,
         CategoriesRole,
         DesktopSourcePathRole,
+        VendorRole,
+        GenericNameRole,
+        KeywordsRole,     // Expose parsed, locale-selected Keywords through the shared app model.
     };
     Q_ENUM(Roles)
 

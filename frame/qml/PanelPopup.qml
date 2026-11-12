@@ -14,8 +14,13 @@ Item {
     property var popupWindow: Panel.popupWindow
     property int popupX: 0
     property int popupY: 0
+    property bool closeOnInactive: true
     property bool readyBinding: false
     property bool openPending: false
+    property bool contentReady: true
+    property bool contentOpenPending: false
+    property bool revealAfterRender: false
+    property bool revealPending: false
     property bool grabInactivePending: false
     property int grabInactiveTimeout: 200
     // WM_NAME, used for kwin.
@@ -54,6 +59,12 @@ Item {
         if (!popupWindow)
             return
 
+        if (!contentReady) {
+            contentOpenPending = true
+            return
+        }
+        contentOpenPending = false
+
         // The popup is being displayed. If you click on other plugin at this time,
         // the popup content of the previous plugin will be displayed first,
         // and the wrong popup size will cause the window size to change and flicker.
@@ -84,10 +95,15 @@ Item {
     function close()
     {
         openPending = false
+        contentOpenPending = false
+        revealPending = false
         grabInactivePending = false
         grabInactiveTimer.stop()
         if (!popupWindow)
             return
+
+        if (popupWindow.currentItem === control)
+            popupWindow.opacity = 1
 
         // avoid to closing window by other PanelPopup.
         if (!readyBinding)
@@ -97,6 +113,25 @@ Item {
         popupWindow.currentItem = null
     }
 
+    onCloseOnInactiveChanged: {
+        if (!closeOnInactive) return
+        Qt.callLater(function() {
+            if (control.closeOnInactive && popupWindow && readyBinding
+                    && popupWindow.currentItem === control && !popupWindow.active)
+                control.close()
+        })
+    }
+
+    onContentReadyChanged: {
+        if (!contentReady || !contentOpenPending)
+            return
+
+        Qt.callLater(function () {
+            if (contentReady && contentOpenPending)
+                control.open()
+        })
+    }
+
     function finalizeOpen()
     {
         if (!popupWindow || !openPending || !readyBinding || popupWindow.currentItem !== control)
@@ -104,8 +139,16 @@ Item {
 
         openPending = false
         popupWindow.title = windowTitle
+        revealPending = revealAfterRender
+        // popupWindow is shared by all PanelPopup instances. Always initialize
+        // its opacity so a popup cannot inherit an interrupted reveal state.
+        popupWindow.opacity = revealPending ? 0 : 1
         popupWindow.show()
-        popupWindow.requestActivate()
+        if (revealPending) {
+            popupWindow.update()
+        } else {
+            popupWindow.requestActivate()
+        }
     }
 
     Timer {
@@ -117,7 +160,7 @@ Item {
             if (!popupWindow || !readyBinding || popupWindow.currentItem !== control || !popup.visible) {
                 return
             }
-            if (!popupWindow.active) {
+            if (control.closeOnInactive && !popupWindow.active) {
                 control.close()
             }
         }
@@ -142,15 +185,28 @@ Item {
             if (control.grabInactivePending || popupWindow.x11GrabFocusTransition) {
                 return
             }
-            // TODO why activeChanged is not emit.
-            if (!popupWindow.active) {
+            Qt.callLater(function() {
+                if (!control.closeOnInactive || !popupWindow
+                        || popupWindow.active) {
+                    return
+                }
                 control.close()
-            }
+            })
         }
 
         function onUpdateGeometryFinished()
         {
             control.finalizeOpen()
+        }
+
+        function onFrameSwapped()
+        {
+            if (!control.revealPending || !popupWindow || popupWindow.currentItem !== control)
+                return
+
+            control.revealPending = false
+            popupWindow.opacity = 1
+            popupWindow.requestActivate()
         }
 
         function onX11FocusOutByGrab()
@@ -178,7 +234,7 @@ Item {
                         || control.grabInactivePending) {
                     return
                 }
-                if (!popupWindow.active) {
+                if (control.closeOnInactive && !popupWindow.active) {
                     control.close()
                 }
             })
@@ -190,7 +246,7 @@ Item {
         visible: readyBinding
         width: control.width
         height: control.height
-        parent: popupWindow ? popupWindow.contentItem : undefined
+        parent: popupWindow ? popupWindow.contentItem : null
     }
     Component.onDestruction: {
         if (popup.visible)

@@ -28,8 +28,18 @@ public:
 
     bool showAttentionAnimation() const;
 
+    // 悬停应用图标时是否强制展示窗口列表（文字）而不是窗口预览（缩略图）。
+    bool showAppWindowList() const;
+
+    // The DConfig value of "noTaskGrouping" (window split option in control center).
+    bool windowSplitValue() const;
+    // The effective split state: the DConfig value is not applied in fashion mode.
     bool isWindowSplit();
     void setWindowSplit(bool split);
+
+    // Fashion mode (Item_Alignment == "fashion") disables the window split feature.
+    void setFashionMode(bool fashionMode);
+    bool fashionMode() const;
 
     bool cgroupsBasedGrouping() const;
     QStringList cgroupsBasedGroupingSkipIds() const;
@@ -55,7 +65,9 @@ private:
 Q_SIGNALS:
     void allowedForceQuitChanged();
     void showAttentionAnimationChanged();
+    void showAppWindowListChanged();
     void windowSplitChanged();
+    void fashionModeChanged();
     void dockedItemsChanged();
     void dockedElementsChanged();
     void dockedApplicationsEnabledChanged(bool enabled);
@@ -65,7 +77,9 @@ private:
 
     bool m_allowForceQuit;
     bool m_showAttentionAnimation;
+    bool m_showAppWindowList;
     bool m_windowSplit;
+    bool m_fashionMode = false;
     bool m_cgroupsBasedGrouping;
     bool m_dockedApplicationsEnabled;
     QStringList m_dockedElements;

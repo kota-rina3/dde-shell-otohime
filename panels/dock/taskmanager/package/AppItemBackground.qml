@@ -9,6 +9,7 @@ import org.deepin.ds.dock 1.0
 import org.deepin.dtk
 
 AppletItemBackground {
+    Accessible.ignored: true
     id: control
     property int windowCount: 0
     property int displayMode: Dock.Efficient
@@ -31,6 +32,12 @@ AppletItemBackground {
             crystal: ("transparent")
         }
         normalDark: normal
+        pressed {
+            crystal: Qt.rgba(1.0, 1.0, 1.0, 0.25)
+        }
+        pressedDark {
+            crystal: Qt.rgba(1.0, 1.0, 1.0, 0.25)
+        }
         hovered {
             crystal: Qt.rgba(1.0, 1.0, 1.0, 0.15)
         }

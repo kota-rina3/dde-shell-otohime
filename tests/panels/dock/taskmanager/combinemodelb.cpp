@@ -4,10 +4,10 @@
 
 #include "combinemodelb.h"
 
-DataB::DataB(int id, TestModelB* parent)
-    : m_id(id)
+DataB::DataB(int id, TestModelB* model)
+    : m_model(model)
+    , m_id(id)
 {
-    Q_UNUSED(parent)
 }
 
 DataB::DataB(int id, const QString &data, TestModelB* model)
@@ -31,9 +31,11 @@ void DataB::setData(const QString &data)
     if (data == m_data) return;
     m_data = data;
 
-    auto index = m_model->match(QModelIndex(), TestModelB::idRole, m_id);
-    if (index.size() > 0) {
-        Q_EMIT m_model->dataChanged(index.first(), index.last(), {TestModelB::dataRole});
+    for (int row = 0; row < m_model->rowCount(); ++row) {
+        if (m_model->index(row, 0).data(TestModelB::idRole).toInt() == m_id) {
+            Q_EMIT m_model->dataChanged(m_model->index(row, 0), m_model->index(row, 0), {TestModelB::dataRole});
+            break;
+        }
     }
 }
 
@@ -83,6 +85,18 @@ void TestModelB::addData(DataB *data)
     endInsertRows();
 }
 
+bool TestModelB::setData(const QModelIndex &index, const QVariant &value, int role)
+{
+    if (!index.isValid() || index.row() >= m_list.size())
+        return false;
+
+    if (role != dataRole)
+        return false;
+
+    m_list[index.row()]->setData(value.toString());
+    return true;
+}
+
 void TestModelB::removeData(DataB *data)
 {
     auto pos = m_list.indexOf(data);
@@ -92,4 +106,12 @@ void TestModelB::removeData(DataB *data)
     m_list.removeAt(pos);
     delete data;
     endRemoveRows();
+}
+
+void TestModelB::clear()
+{
+    beginResetModel();
+    qDeleteAll(m_list);
+    m_list.clear();
+    endResetModel();
 }

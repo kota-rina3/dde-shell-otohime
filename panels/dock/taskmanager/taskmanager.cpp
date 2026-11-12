@@ -12,6 +12,7 @@
 #include "dockcombinemodel.h"
 #include "dockglobalelementmodel.h"
 #include "dsglobal.h"
+#include "foldercontent.h"
 #include "globals.h"
 #include "hoverpreviewproxymodel.h"
 #include "itemmodel.h"
@@ -28,6 +29,7 @@
 #endif
 
 #include <QGuiApplication>
+#include <QTimer>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QStringLiteral>
@@ -146,6 +148,7 @@ private:
 TaskManager::TaskManager(QObject *parent)
     : DContainment(parent)
     , AbstractTaskManagerInterface(nullptr)
+    , m_folderMenuRegistry(this)
     , m_windowFullscreen(false)
 {
     qmlRegisterType<TextCalculator>("org.deepin.ds.dock.taskmanager", 1, 0, "TextCalculator");
@@ -158,6 +161,7 @@ TaskManager::TaskManager(QObject *parent)
     connect(Settings, &TaskManagerSettings::allowedForceQuitChanged, this, &TaskManager::allowedForceQuitChanged);
     connect(Settings, &TaskManagerSettings::showAttentionAnimationChanged, this, &TaskManager::showAttentionAnimationChanged);
     connect(Settings, &TaskManagerSettings::windowSplitChanged, this, &TaskManager::windowSplitChanged);
+    connect(Settings, &TaskManagerSettings::fashionModeChanged, this, &TaskManager::fashionModeChanged);
 }
 
 bool TaskManager::load()
@@ -224,6 +228,7 @@ bool TaskManager::init()
         }, this);
 
         m_dockGlobalElementModel = new DockGlobalElementModel(model, m_activeAppModel, this);
+        m_dockGlobalElementModel->setApplicationFolderModel(applet->property("appGroupModel").value<QAbstractItemModel *>());
         m_itemModel = new DockItemModel(m_dockGlobalElementModel, this);
 
         // 初始化预览代理模型，基于合并后的数据
@@ -375,6 +380,11 @@ void TaskManager::handleWindowAdded(QPointer<AbstractWindow> window)
         qCDebug(taskManagerLog()) << "identify by Fallback:" << desktopId;
     }
 
+    if (desktopfile.isNull()) {
+        qCWarning(taskManagerLog()) << "Failed to identify window, desktopfile is null, skip window:" << window->id();
+        return;
+    }
+
     auto appitem = desktopfile->getAppItem();
 
     if (appitem.isNull() || (appitem->hasWindow() && windowSplit())) {
@@ -426,7 +436,6 @@ QString TaskManager::desktopIdToAppId(const QString& desktopId)
 bool TaskManager::requestDockByDesktopId(const QString& desktopID)
 {
     if (!Settings->dockedApplicationsEnabled()) return false;
-    if (desktopID.startsWith("internal/")) return false;
     QString appId = desktopIdToAppId(desktopID);
     // 检查应用是否已经在任务栏中，如果是则返回 false
     if (IsDocked(appId))
@@ -437,8 +446,6 @@ bool TaskManager::requestDockByDesktopId(const QString& desktopID)
 
 bool TaskManager::requestUndockByDesktopId(const QString& desktopID)
 {
-    if (!Settings->dockedApplicationsEnabled()) return false;
-    if (desktopID.startsWith("internal/")) return false;
     return RequestUndock(desktopIdToAppId(desktopID));
 }
 
@@ -446,6 +453,19 @@ bool TaskManager::RequestDock(QString appID)
 {
     if (!Settings->dockedApplicationsEnabled())
         return false;
+
+    if (appID.startsWith("folder/")) {
+        const auto normalized = FolderContentRegistry::instance()->normalizeReference(appID);
+        if (normalized != appID) return false;
+        if (!Settings->isDocked(appID)) Settings->appendDockedElement(appID);
+        return true;
+    }
+    if (appID.startsWith("internal/folders/")) {
+        if (!m_dockGlobalElementModel || !m_dockGlobalElementModel->containsApplicationFolder(appID)) return false;
+        if (!Settings->isDocked(appID)) Settings->appendDockedElement(appID);
+        return true;
+    }
+    if (appID.startsWith("internal/")) return false;
 
     auto desktopfileParser = DESKTOPFILEFACTORY::createById(appID, "amAPP");
 
@@ -467,6 +487,13 @@ bool TaskManager::RequestDock(QString appID)
 
 bool TaskManager::IsDocked(QString appID)
 {
+    if (appID.startsWith("folder/"))
+        return FolderContentRegistry::isReference(appID) && Settings->isDocked(appID);
+    if (appID.startsWith("internal/folders/")) {
+        return Settings->isDocked(appID);
+    }
+    if (appID.startsWith("internal/")) return false;
+
     auto desktopfileParser = DESKTOPFILEFACTORY::createById(appID, "amAPP");
 
     auto res = desktopfileParser->isValied();
@@ -482,6 +509,17 @@ bool TaskManager::RequestUndock(QString appID)
 {
     if (!Settings->dockedApplicationsEnabled())
         return false;
+
+    if (appID.startsWith("folder/")) {
+        if (!FolderContentRegistry::isReference(appID)) return false;
+        Settings->removeDockedElement(appID);
+        return true;
+    }
+    if (appID.startsWith("internal/folders/")) {
+        Settings->removeDockedElement(appID);
+        return true;
+    }
+    if (appID.startsWith("internal/")) return false;
 
     auto desktopfileParser = DESKTOPFILEFACTORY::createById(appID, "amAPP");
     auto res = desktopfileParser->isValied();
@@ -501,6 +539,16 @@ bool TaskManager::RequestUndock(QString appID)
 bool TaskManager::windowSplit()
 {
     return Settings->isWindowSplit();
+}
+
+void TaskManager::setFashionMode(bool fashionMode)
+{
+    Settings->setFashionMode(fashionMode);
+}
+
+bool TaskManager::fashionMode()
+{
+    return Settings->fashionMode();
 }
 
 bool TaskManager::windowFullscreen()
@@ -526,11 +574,15 @@ void TaskManager::saveDockElementsOrder(const QStringList &appIds)
     const QStringList &dockedElements = TaskManagerSettings::instance()->dockedElements();
     QStringList newDockedElements;
     for (const auto &appId : appIds) {
-        auto desktopElement = QString("desktop/%1").arg(appId);
-        if (dockedElements.contains(desktopElement) && !newDockedElements.contains(desktopElement)) {
+        auto desktopElement = appId.startsWith("internal/folders/") || FolderContentRegistry::isReference(appId)
+            ? appId : QString("desktop/%1").arg(appId);
+        if (dockedElements.contains(desktopElement)) {
             newDockedElements.append(desktopElement);
         }
     }
+    // Keep configured entries that are temporarily absent while sources load.
+    newDockedElements.append(dockedElements);
+    newDockedElements.removeDuplicates();
     TaskManagerSettings::instance()->setDockedElements(newDockedElements);
 }
 
@@ -538,6 +590,39 @@ void TaskManager::moveItem(int from, int to)
 {
     if (m_dockGlobalElementModel)
         m_dockGlobalElementModel->moveItem(from, to);
+}
+
+bool TaskManager::registerFolderMenuProvider(const QString &folderType, QObject *provider)
+{
+    return m_folderMenuRegistry.registerProvider(folderType, provider);
+}
+
+void TaskManager::unregisterFolderMenuProvider(const QString &folderType, QObject *provider)
+{
+    m_folderMenuRegistry.unregisterProvider(folderType, provider);
+}
+
+QVariantList TaskManager::folderMenuItems(const QString &folderType, const QString &folderId, const QString &folderName) const
+{
+    return m_folderMenuRegistry.menuItems(folderType, folderId, folderName);
+}
+
+bool TaskManager::triggerFolderMenuAction(const QString &folderType, const QString &folderId, const QString &actionId) const
+{
+    return m_folderMenuRegistry.trigger(folderType, folderId, actionId);
+}
+
+QObject *TaskManager::folderApplicationBackend() const
+{
+    DS_NAMESPACE::DAppletBridge bridge("org.deepin.ds.dock.launcherapplet");
+    auto launcher = bridge.applet();
+    return launcher ? launcher->property("folderApplicationBackend").value<QObject *>() : nullptr;
+}
+
+void TaskManager::launchFolderApplication(const QString &id) const
+{
+    if (id.isEmpty() || id.startsWith("internal/")) return;
+    QProcess::startDetached("dde-am", {"--by-user", id});
 }
 
 QString TaskManager::getTrashTipText()

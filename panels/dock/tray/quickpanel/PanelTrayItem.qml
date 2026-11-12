@@ -14,6 +14,7 @@ import org.deepin.dtk 1.0
 
 Control {
     id: root
+    Accessible.id: "PanelTrayItem_Control"
     property bool useColumnLayout: false
     required property var shellSurface
     property int itemMargins
@@ -32,6 +33,8 @@ Control {
     }
 
     PanelToolTip {
+        Accessible.id: "PanelTrayItem_Pane"
+        Accessible.role: Accessible.ToolTip
         id: toolTip
         text: qsTr("Quick actions")
         toolTipX: DockPanelPositioner.x
@@ -81,6 +84,7 @@ Control {
         }
     }
     background: AppletItemBackground {
+        Accessible.ignored: true
         isActive: root.isOpened
     }
 
@@ -91,6 +95,8 @@ Control {
         property alias hovered: surfaceLayer.hovered
 
         ShellSurfaceItemProxy {
+            Accessible.id: "PanelTrayItem_Pane_2"
+            Accessible.role: Accessible.Pane
             id: surfaceLayer
             property var itemGlobalPoint: {
                 var a = surfaceLayer

@@ -7,8 +7,9 @@
 #include "dockhelper.h"
 #include "dockpanel.h"
 
-#include "qwayland-treeland-dde-shell-v1.h"
 #include "qwayland-treeland-wallpaper-color-v1.h"
+#include "qwayland-treeland-xwindow-control-unstable-v1.h"
+#include "qwayland-treeland-region-watch-unstable-v1.h"
 #include <QWidget>
 
 #include <QtWaylandClient/QWaylandClientExtension>
@@ -18,8 +19,9 @@
 namespace dock {
 class WallpaperColorManager;
 class TreeLandDockTriggerArea;
-class TreeLandDDEShellManager;
-class TreeLandWindowOverlapChecker;
+class TreeLandXWindowControl;
+class TreeLandRegionWatchManager;
+class TreeLandRegionWatch;
 
 class WaylandDockHelper : public DockHelper
 {
@@ -50,17 +52,18 @@ protected Q_SLOTS:
     void setCurrentActiveWindowFullscreened(bool);
 
 private:
-    void updateOverlapCheckerPos();
+    void updateRegionWatchPos();
     void initWallpaperColorManager();
 
 private:
-    friend class TreeLandWindowOverlapChecker;
+    friend class TreeLandRegionWatch;
     bool m_isWindowOverlap;
     bool m_isCurrentActiveWindowFullscreened;
     DockPanel *m_panel;
     QScopedPointer<WallpaperColorManager> m_wallpaperColorManager;
-    QScopedPointer<TreeLandWindowOverlapChecker> m_overlapChecker;
-    QScopedPointer<TreeLandDDEShellManager> m_ddeShellManager;
+    QScopedPointer<TreeLandRegionWatch> m_regionWatch;
+    QScopedPointer<TreeLandRegionWatchManager> m_regionWatchManager;
+    QScopedPointer<TreeLandXWindowControl> m_xwindowControl;
     struct ::wl_surface *m_dockWlSurface = nullptr;  // Dock's wl_surface for XEmbed positioning
 };
 
@@ -69,6 +72,7 @@ class WallpaperColorManager : public QWaylandClientExtensionTemplate<WallpaperCo
     Q_OBJECT
 public:
     explicit WallpaperColorManager(WaylandDockHelper *helper);
+    ~WallpaperColorManager() override;
 
     void watchScreen(const QString &screeName);
     void treeland_wallpaper_color_manager_v1_output_color(const QString &output, uint32_t isDark) override;
@@ -80,29 +84,39 @@ private:
     WaylandDockHelper *m_helper;
 };
 
-class TreeLandDDEShellManager : public QWaylandClientExtensionTemplate<TreeLandDDEShellManager>, public QtWayland::treeland_dde_shell_manager_v1
+class TreeLandXWindowControl : public QWaylandClientExtensionTemplate<TreeLandXWindowControl>, public QtWayland::treeland_xwindow_control_v1
 {
     Q_OBJECT
 
 public:
-    explicit TreeLandDDEShellManager();
-    
-    // Move XEmbed window to position relative to anchor surface
-    // Returns wl_callback* or nullptr if not active
+    explicit TreeLandXWindowControl();
+
+    ~TreeLandXWindowControl() override;
+
     struct ::wl_callback *setXWindowPositionRelative(uint32_t wid, struct ::wl_surface *anchor, double dx, double dy);
 };
 
-class TreeLandWindowOverlapChecker : public QWaylandClientExtensionTemplate<TreeLandWindowOverlapChecker>, public QtWayland::treeland_window_overlap_checker
+class TreeLandRegionWatchManager : public QWaylandClientExtensionTemplate<TreeLandRegionWatchManager>, public QtWayland::treeland_region_watch_manager_v1
 {
     Q_OBJECT
 
 public:
-    TreeLandWindowOverlapChecker(WaylandDockHelper *helper, struct ::treeland_window_overlap_checker *);
-    ~TreeLandWindowOverlapChecker();
+    explicit TreeLandRegionWatchManager();
+    ~TreeLandRegionWatchManager() override;
+};
+
+class TreeLandRegionWatch : public QWaylandClientExtensionTemplate<TreeLandRegionWatch>, public QtWayland::treeland_region_watch_v1
+{
+    Q_OBJECT
+
+public:
+    TreeLandRegionWatch(WaylandDockHelper *helper, struct ::treeland_region_watch_v1 *);
+    ~TreeLandRegionWatch();
 
 protected:
-    void treeland_window_overlap_checker_enter() override;
-    void treeland_window_overlap_checker_leave() override;
+    void treeland_region_watch_v1_enter() override;
+    void treeland_region_watch_v1_leave() override;
+    void treeland_region_watch_v1_output_removed() override;
 
 private:
     WaylandDockHelper *m_helper;

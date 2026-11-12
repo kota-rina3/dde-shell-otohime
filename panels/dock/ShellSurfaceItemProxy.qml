@@ -18,6 +18,7 @@ Item {
     property bool pressed: tapHandler.pressed
     property int cursorShape: Qt.ArrowCursor
     property alias shellSurfaceItem: impl
+    readonly property bool hasSurfaceContent: impl.surface ? impl.surface.hasContent : false
 
     implicitWidth: shellSurface ? shellSurface.width : 16
     implicitHeight: shellSurface ? shellSurface.height : 16
@@ -35,6 +36,7 @@ Item {
     ShellSurfaceItem {
         id: impl
         width: parent.width
+        Accessible.id: "ShellSurfaceItemProxy"
         height: parent.height
         shellSurface: root.shellSurface
         inputEventsEnabled: root.inputEventsEnabled
@@ -111,6 +113,7 @@ Item {
     }
     Component.onCompleted: function () {
         impl.surfaceDestroyed.connect(root.surfaceDestroyed)
+        updateCursorShapeConnection()
     }
 
     Connections {
@@ -125,17 +128,31 @@ Item {
                 })
             })
         }
+    }
 
-        function onCursorShapeRequested(cursorShape)
-        {
-            console.log("onCursorShapeRequested:", cursorShape)
-            // Qt::CursorShape range is 0-21, plus 24 (BitmapCursor) and 25 (CustomCursor).
-            // We set a default if the value is out of logical bounds.
-            if (cursorShape < 0 || cursorShape > 25) {
-                root.cursorShape = Qt.ArrowCursor
-            } else {
-                root.cursorShape = cursorShape
-            }
+    property var cursorShapeConnection: null
+
+    onShellSurfaceChanged: updateCursorShapeConnection()
+
+    function updateCursorShapeConnection() {
+        if (cursorShapeConnection) {
+            cursorShapeConnection.disconnect()
+            cursorShapeConnection = null
+        }
+        // cursorShapeRequested only exists on PluginPopup, not on PluginSurface,
+        // so connect dynamically to avoid a QML warning for surfaces lacking it.
+        if (shellSurface && shellSurface.cursorShapeRequested) {
+            cursorShapeConnection = shellSurface.cursorShapeRequested.connect(onCursorShapeRequested)
+        }
+    }
+
+    function onCursorShapeRequested(cursorShape) {
+        // Qt::CursorShape range is 0-21, plus 24 (BitmapCursor) and 25 (CustomCursor).
+        // We set a default if the value is out of logical bounds.
+        if (cursorShape < 0 || cursorShape > 25) {
+            root.cursorShape = Qt.ArrowCursor
+        } else {
+            root.cursorShape = cursorShape
         }
     }
 }

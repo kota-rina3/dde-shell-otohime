@@ -80,6 +80,7 @@ FocusScope {
     }
 
     ListView {
+        Accessible.id: "View"
         id: view
         spacing: 10
         snapMode: ListView.SnapToItem
@@ -89,6 +90,8 @@ FocusScope {
 
         model: notifyModel
         delegate: OverlapNotify {
+            Accessible.id: "NotifyStaging_AlertMessage"
+            Accessible.role: Accessible.Pane
             id: overlapNotify
             objectName: "overlap-" + model.appName
             focus: true

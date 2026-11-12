@@ -18,6 +18,8 @@ Item {
     signal popupCreated(var surfaceId)
 
     PanelToolTip {
+        Accessible.role: Accessible.ToolTip
+        Accessible.id: "ToolTip"
         id: toolTip
         onToolTipVisibleChanged: function (visible) {
             if (visible && menuWindow.visible)
@@ -26,6 +28,8 @@ Item {
 
         property alias shellSurface: surfaceLayer.shellSurface
         ShellSurfaceItemProxy {
+            Accessible.role: Accessible.Pane
+            Accessible.id: "SurfaceLayer"
             id: surfaceLayer
             anchors.centerIn: parent
             autoClose: true
@@ -48,6 +52,8 @@ Item {
         }
     }
     PanelMenu {
+        Accessible.id: "SurfacePopup_Menu"
+        Accessible.role: Accessible.PopupMenu
         id: menu
         width: menuSurfaceLayer.width
         height: menuSurfaceLayer.height
@@ -55,6 +61,8 @@ Item {
 
         property alias shellSurface: menuSurfaceLayer.shellSurface
         ShellSurfaceItemProxy {
+            Accessible.role: Accessible.Pane
+            Accessible.id: "MenuSurfaceLayer"
             id: menuSurfaceLayer
             anchors.centerIn: parent
             autoClose: true
@@ -76,6 +84,8 @@ Item {
             id: subMenuLoader
             active: false
             sourceComponent: SurfaceSubPopup {
+                Accessible.role: Accessible.Dialog
+                Accessible.id: "SurfaceSubPopup"
                 objectName: "stashed's subPopup"
                 transientParent: menuWindow
                 surfaceAcceptor: function (surfaceId) {
@@ -118,10 +128,10 @@ Item {
 
                 toolTip.shellSurface = popupSurface
                 toolTip.toolTipX = Qt.binding(function () {
-                    return Panel.popupWindow.xOffset + toolTip.shellSurface.x - toolTip.width / 2
+                    return toolTip.shellSurface ? Panel.popupWindow.xOffset + toolTip.shellSurface.x - toolTip.width / 2 : 0
                 })
                 toolTip.toolTipY = Qt.binding(function () {
-                    return Panel.popupWindow.yOffset + toolTip.shellSurface.y - toolTip.height - toolTipVOffset
+                    return toolTip.shellSurface ? Panel.popupWindow.yOffset + toolTip.shellSurface.y - toolTip.height - toolTipVOffset : 0
                 })
                 toolTip.open()
             } else if (popupSurface.popupType === Dock.TrayPopupTypeMenu) {

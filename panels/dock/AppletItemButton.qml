@@ -10,6 +10,7 @@ import org.deepin.dtk
 
 IconButton {
     id: control
+    Accessible.id: "AppletItemButton_IconButton"
     property bool isActive
     property real radius: 4
     property bool autoClosePopup: false
@@ -35,11 +36,14 @@ IconButton {
     }
 
     background: AppletItemBackground {
+        Accessible.ignored: true
         radius: control.radius
         isActive: control.isActive
     }
 
     Component.onCompleted: {
-        contentItem.smooth = false
+        contentItem.smooth = Qt.binding(function () {
+            return Math.round(contentItem.rotation) % 90 !== 0
+        })
     }
 }

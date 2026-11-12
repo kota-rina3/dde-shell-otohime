@@ -90,7 +90,7 @@ struct WlQtTextInputMethodHelper : public QtWaylandServer::qt_text_input_method_
 };
 
 PluginScaleManager::PluginScaleManager(QWaylandCompositor *compositor)
-    : QWaylandCompositorExtensionTemplate(compositor)
+    : QWaylandCompositorExtension(compositor)
     , m_compositor(compositor)
 {
 }
@@ -119,7 +119,7 @@ uint32_t PluginScaleManager::pluginScale()
 
 void PluginScaleManager::initialize()
 {
-    QWaylandCompositorExtensionTemplate::initialize();
+    QWaylandCompositorExtension::initialize();
     QWaylandCompositor *compositor = static_cast<QWaylandCompositor *>(extensionContainer());
     Q_ASSERT(compositor);
 
@@ -166,7 +166,8 @@ PluginSurface::PluginSurface(PluginManager *manager,
                              int sizePolicy,
                              QWaylandSurface *surface,
                              const QWaylandResource &resource)
-    : m_manager(manager)
+    : QWaylandShellSurface(nullptr)
+    , m_manager(manager)
     , m_surface(surface)
     , m_itemKey(itemKey)
     , m_pluginId(pluginId)
@@ -251,6 +252,21 @@ void PluginSurface::setItemActive(bool isActive)
 bool PluginSurface::isItemActive() const
 {
     return m_isItemActive;
+}
+
+int PluginSurface::cardOrder() const
+{
+    return m_cardOrder;
+}
+
+void PluginSurface::setCardOrder(int order)
+{
+    if (m_cardOrder == order) {
+        return;
+    }
+
+    m_cardOrder = order;
+    Q_EMIT cardOrderChanged();
 }
 
 void PluginSurface::updatePluginGeometry(const QRect &geometry)
@@ -355,7 +371,8 @@ PluginPopup::PluginPopup(PluginManager *manager,
                          int popupType,
                          QWaylandSurface *surface,
                          const QWaylandResource &resource)
-    : m_manager(manager)
+    : QWaylandShellSurface(nullptr)
+    , m_manager(manager)
     , m_surface(surface)
     , m_itemKey(itemKey)
     , m_pluginId(pluginId)
@@ -481,7 +498,7 @@ void PluginPopup::plugin_popup_set_cursor(Resource *resource, int32_t cursor_sha
 }
 
 PluginManager::PluginManager(QWaylandCompositor *compositor)
-    : QWaylandCompositorExtensionTemplate(compositor)
+    : QWaylandCompositorExtension(compositor)
 {
     auto theme = DGuiApplicationHelper::instance()->applicationTheme();
     QObject::connect(theme, &DPlatformTheme::fontNameChanged, this, &PluginManager::onFontChanged);
@@ -494,7 +511,7 @@ PluginManager::PluginManager(QWaylandCompositor *compositor)
 
 void PluginManager::initialize()
 {
-    QWaylandCompositorExtensionTemplate::initialize();
+    QWaylandCompositorExtension::initialize();
     QWaylandCompositor *compositor = static_cast<QWaylandCompositor *>(extensionContainer());
 
     // ###(zccrs): 在dde-shell中不要使用QWaylandCompositor的event handler，它会对key event进行
@@ -652,6 +669,9 @@ void PluginManager::plugin_manager_v1_request_message(Resource *resource, const 
         // todo
     } else if (msgType == dock::MSG_ITEM_ACTIVE_STATE) {
         dstPlugin->setItemActive(rootObj.value(dock::MSG_DATA).toBool());
+    } else if (msgType == dock::MSG_CARD_ORDER) {
+        dstPlugin->setCardOrder(rootObj.value(dock::MSG_DATA)
+                                    .toInt(std::numeric_limits<int>::max()));
     } else if (msgType == dock::MSG_UPDATE_TOOLTIPS_VISIBLE) {
 
     }
@@ -676,6 +696,7 @@ void PluginManager::plugin_manager_v1_create_plugin(Resource *resource, const QS
     Q_EMIT pluginSurfaceCreated(plugin);
 
     sendEventMsg(resource, dockSizeMsg());
+    sendEventMsg(resource, fashionModeMsg());
     sendEventMsg(resource, popupMinHeightMsg());
 }
 
@@ -808,6 +829,20 @@ void PluginManager::setDockSize(const QSize &newDockSize)
     emit dockSizeChanged();
 }
 
+bool PluginManager::fashionMode() const
+{
+    return m_fashionMode;
+}
+
+void PluginManager::setFashionMode(bool newFashionMode)
+{
+    if (m_fashionMode == newFashionMode)
+        return;
+    m_fashionMode = newFashionMode;
+    sendEventMsg(fashionModeMsg());
+    emit fashionModeChanged();
+}
+
 void PluginManager::removePluginSurface(PluginSurface *plugin)
 {
     Q_EMIT pluginSurfaceDestroyed(plugin);
@@ -870,6 +905,14 @@ QString PluginManager::dockSizeMsg() const
     QJsonObject obj;
     obj[dock::MSG_TYPE] = dock::MSG_DOCK_PANEL_SIZE_CHANGED;
     obj[dock::MSG_DATA] = sizeData;
+    return toJson(obj);
+}
+
+QString PluginManager::fashionModeMsg() const
+{
+    QJsonObject obj;
+    obj[dock::MSG_TYPE] = dock::MSG_DOCK_FASHION_MODE;
+    obj[dock::MSG_DATA] = m_fashionMode;
     return toJson(obj);
 }
 
