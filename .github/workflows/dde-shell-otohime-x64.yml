@@ -17,6 +17,7 @@ jobs:
     - name: 安装所需依赖
       run: |
         apt update && apt upgrade -y
+        apt install -y treeland-protocols
         sudo apt build-dep . -y
 
     - name: 构建deb包
